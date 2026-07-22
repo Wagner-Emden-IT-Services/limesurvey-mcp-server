@@ -1,0 +1,50 @@
+name: Publish to npm (Trusted Publishing)
+
+# Publishes to npm via OIDC Trusted Publishing (no long-lived tokens).
+# Triggered by publishing a GitHub Release, or manually via workflow_dispatch.
+#
+# One-time setup on npmjs.com (Settings -> Trusted Publishers) for this package:
+#   Provider:   GitHub Actions
+#   Owner:      Wagner-Emden-IT-Services
+#   Repository: limesurvey-mcp-server
+#   Workflow:   publish.yml
+# The package must have been published manually once before OIDC can be configured.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # required for npm provenance + OIDC trusted publishing
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 24 (ships npm 11+ for OIDC)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: "https://registry.npmjs.org"
+          cache: npm
+
+      - name: Ensure npm >= 11.5.1 (OIDC support)
+        run: npm install -g npm@latest
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm test
+
+      # No NPM_TOKEN needed: the npm CLI performs the OIDC exchange itself.
+      - name: Publish to npm
+        run: npm publish --provenance --access public
