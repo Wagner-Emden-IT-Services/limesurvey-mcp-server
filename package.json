@@ -1,0 +1,63 @@
+{
+  "name": "limesurvey-mcp-server",
+  "version": "1.2.0",
+  "description": "Model Context Protocol server for the LimeSurvey RemoteControl 2 API",
+  "author": "Wagner-Emden IT Services",
+  "type": "module",
+  "main": "dist/src/index.js",
+  "bin": {
+    "limesurvey-mcp": "dist/src/index.js"
+  },
+  "files": [
+    "dist/src",
+    "docs",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    ".env.example"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "prebuild": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/src/index.js",
+    "test": "npm run build && node --test dist/test/*.test.js",
+    "inspect": "npx @modelcontextprotocol/inspector node dist/src/index.js",
+    "prepublishOnly": "npm test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Wagner-Emden-IT-Services/limesurvey-mcp-server.git"
+  },
+  "homepage": "https://github.com/Wagner-Emden-IT-Services/limesurvey-mcp-server#readme",
+  "bugs": {
+    "url": "https://github.com/Wagner-Emden-IT-Services/limesurvey-mcp-server/issues"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "limesurvey",
+    "survey",
+    "remotecontrol",
+    "json-rpc",
+    "survey-theme"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "express": "^5.2.1",
+    "fast-xml-parser": "^5.10.1",
+    "jszip": "^3.10.1",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0"
+  }
+}
