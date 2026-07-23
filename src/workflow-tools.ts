@@ -221,7 +221,7 @@ export function registerWorkflowTools(
       description: "Add one participant using a simple participant object.",
       inputSchema: z.object({
         survey_id: surveyId,
-        participant: z.record(jsonValueSchema).describe("Participant fields such as email, firstname, lastname, token, and attributes."),
+        participant: z.record(z.string(), jsonValueSchema).describe("Participant fields such as email, firstname, lastname, token, and attributes."),
         create_token: z.boolean().default(true),
       }).strict(),
       outputSchema,
@@ -242,7 +242,7 @@ export function registerWorkflowTools(
       description: "List participant rows with explicit filters, selected fields, and bounded pagination.",
       inputSchema: z.object({
         survey_id: surveyId,
-        conditions: z.record(jsonValueSchema).default({}),
+        conditions: z.record(z.string(), jsonValueSchema).default({}),
         attributes: z.union([z.literal(false), z.array(z.string())]).default(false),
         unused: z.boolean().default(false),
         offset: z.number().int().nonnegative().default(0),
@@ -293,7 +293,7 @@ export function registerWorkflowTools(
         from_response_id: z.number().int().nonnegative().nullable().default(null),
         to_response_id: z.number().int().nonnegative().nullable().default(null),
         fields: z.array(z.string()).nullable().default(null),
-        additional_options: z.record(jsonValueSchema).nullable().default(null),
+        additional_options: z.record(z.string(), jsonValueSchema).nullable().default(null),
         ...exportFileFields,
       }).strict(),
       outputSchema,
