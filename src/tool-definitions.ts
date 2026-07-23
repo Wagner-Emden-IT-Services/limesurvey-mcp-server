@@ -30,9 +30,9 @@ export const jsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
     z.boolean(),
     z.null(),
     z.array(jsonValueSchema),
-    z.record(jsonValueSchema),
+    z.record(z.string(), jsonValueSchema),
   ]),
-);
+) as z.ZodType<JsonValue>;
 
 const responseFormatSchema = z
   .enum(["json", "markdown"])
@@ -44,7 +44,7 @@ const optionalString = (description: string) => z.string().min(1).nullable().opt
 const integer = (description: string) => z.number().int().nonnegative().describe(description);
 const positiveInteger = (description: string) => z.number().int().positive().describe(description);
 const optionalInteger = (description: string) => z.number().int().nonnegative().nullable().optional().describe(description);
-const jsonObject = (description: string) => z.record(jsonValueSchema).describe(description);
+const jsonObject = (description: string) => z.record(z.string(), jsonValueSchema).describe(description);
 const stringArray = (description: string) => z.array(z.string()).describe(description);
 const optionalStringArray = (description: string) => z.array(z.string()).nullable().optional().describe(description);
 
@@ -59,7 +59,7 @@ function define(
   access: "read" | "write" | "delete",
   parameters: ParameterDefinition[] = [],
 ): ToolDefinition {
-  const shape: z.ZodRawShape = { response_format: responseFormatSchema };
+  const shape: Record<string, z.ZodTypeAny> = { response_format: responseFormatSchema };
   for (const parameter of parameters) shape[parameter.key] = parameter.schema;
   let confirmation = "";
   if (access === "delete") {
