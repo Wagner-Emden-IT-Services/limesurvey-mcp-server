@@ -33,7 +33,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/Wagner-Emden-IT-Services/limesurvey-mcp-server.git"
+    "url": "git+https://github.com/Wagner-Emden-IT-Services/limesurvey-mcp-server.git"
   },
   "homepage": "https://github.com/Wagner-Emden-IT-Services/limesurvey-mcp-server#readme",
   "bugs": {
