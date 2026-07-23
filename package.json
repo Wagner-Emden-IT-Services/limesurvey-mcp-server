@@ -1,6 +1,6 @@
 {
   "name": "limesurvey-mcp-server",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Model Context Protocol server for the LimeSurvey RemoteControl 2 API",
   "author": "Wagner-Emden IT Services",
   "type": "module",
@@ -11,6 +11,7 @@
   "files": [
     "dist/src",
     "docs",
+    "scripts",
     "README.md",
     "CHANGELOG.md",
     "LICENSE",
@@ -24,6 +25,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/src/index.js",
     "test": "npm run build && node --test dist/test/*.test.js",
+    "test:live": "npm run build && node scripts/live-integration-test.mjs",
     "inspect": "npx @modelcontextprotocol/inspector node dist/src/index.js",
     "prepublishOnly": "npm test"
   },

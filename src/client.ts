@@ -24,6 +24,15 @@ function errorCode(value: JsonValue | undefined): string | undefined {
   return typeof code === "string" ? code : undefined;
 }
 
+function hasApiError(value: JsonValue | undefined): boolean {
+  if (!isObject(value)) return false;
+  if (errorCode(value)) return true;
+  if (isObject(value.errors) && Object.keys(value.errors).length > 0) return true;
+  const status = statusMessage(value);
+  return typeof status === "string"
+    && /^(?:error\b|invalid\b|no\b|unable\b|can(?:not|'t)\b|sorry\b)|\bfailed\b/i.test(status);
+}
+
 export class LimeSurveyClient {
   private requestId = 0;
   private sessionKey: string | undefined;
@@ -136,7 +145,7 @@ export class LimeSurveyClient {
 
   private throwForApiError(method: string, result: JsonValue): void {
     const code = errorCode(result);
-    if (!code) return;
+    if (!hasApiError(result)) return;
     const message = statusMessage(result) ?? "Unknown LimeSurvey error";
     throw new LimeSurveyError(`${method} failed: ${message}`, code, result);
   }

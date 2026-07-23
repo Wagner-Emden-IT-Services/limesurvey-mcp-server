@@ -67,7 +67,7 @@ export function createServer(
   config: LimeSurveyConfig,
   fetchImpl?: FetchImplementation,
 ): { server: McpServer; client: LimeSurveyClient } {
-  const server = new McpServer({ name: "limesurvey-mcp-server", version: "1.2.0" });
+  const server = new McpServer({ name: "limesurvey-mcp-server", version: "1.2.1" });
   const client = new LimeSurveyClient(config, fetchImpl);
 
   for (const definition of toolDefinitions) {

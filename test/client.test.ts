@@ -74,3 +74,31 @@ test("returns a sanitized connection status instead of the session key", async (
   const client = new LimeSurveyClient(config, mockFetch);
   assert.deepEqual(await client.call("get_session_key"), { status: "connected", auth_plugin: "Authdb" });
 });
+
+test("rejects LimeSurvey status errors even when error_code is missing", async () => {
+  const mockFetch: typeof fetch = async (_input, init) => {
+    const request = JSON.parse(String(init?.body)) as JsonRpcRequest;
+    if (request.method === "get_session_key") return jsonResponse(request.id, "session-1");
+    return jsonResponse(request.id, {
+      status: "Error when update question",
+      errors: { title: ["Question codes may only contain letters and numbers."] },
+    });
+  };
+  const client = new LimeSurveyClient(config, mockFetch);
+
+  await assert.rejects(
+    client.call("import_question", [123, 456, "base64", "lsq"]),
+    /import_question failed: Error when update question/,
+  );
+});
+
+test("accepts successful LimeSurvey status objects", async () => {
+  const mockFetch: typeof fetch = async (_input, init) => {
+    const request = JSON.parse(String(init?.body)) as JsonRpcRequest;
+    if (request.method === "get_session_key") return jsonResponse(request.id, "session-1");
+    return jsonResponse(request.id, { status: "OK" });
+  };
+  const client = new LimeSurveyClient(config, mockFetch);
+
+  assert.deepEqual(await client.call("activate_tokens", [123, []]), { status: "OK" });
+});

@@ -232,7 +232,7 @@ npm run inspect
 npm pack --dry-run
 ```
 
-The 15 automated tests use mocked LimeSurvey JSON-RPC responses and cover:
+The 17 automated tests use mocked LimeSurvey JSON-RPC responses and cover:
 
 - JSON-RPC 1.0 ordering, session reuse, renewal, and secret handling
 - MCP handshake, schemas, annotations, confirmations, and read-only enforcement
@@ -242,6 +242,19 @@ The 15 automated tests use mocked LimeSurvey JSON-RPC responses and cover:
 
 No live LimeSurvey credentials are required. Content evaluations must be created
 against a stable test instance; see [evaluations/README.md](evaluations/README.md).
+
+An opt-in live integration runner exercises all 68 tools against disposable,
+prefixed test records:
+
+```bash
+npm run test:live
+```
+
+It requires explicit environment confirmation and an external official
+LimeSurvey fixture checkout. Never run it against a production instance.
+`cpd_importParticipants` has no matching RemoteControl delete method, so the
+runner reports the uniquely named central participant for manual removal. See
+[Live Integration Testing](docs/LIVE_TESTING.md).
 
 ## Project Structure
 
@@ -256,6 +269,7 @@ src/
   http-server.ts        authenticated Streamable HTTP transport
   index.ts              stdio/HTTP entry point
 test/                   mocked unit, protocol, transport, workflow, and theme tests
+scripts/                opt-in guarded live integration test
 docs/                   detailed operational documentation
 ```
 
