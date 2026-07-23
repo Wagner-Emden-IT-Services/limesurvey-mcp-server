@@ -55,11 +55,12 @@ npm run inspect
 ### Option A: npm
 
 ```bash
-npx -y limesurvey-mcp-server
+npx -y limesurvey-mcp-server@1.2.2
 ```
 
 The server uses stdio by default. Supply credentials through the MCP client
-configuration shown below.
+configuration shown below. Pin a version for reproducible deployments, or use
+`@latest` to receive the newest release whenever the MCP process starts.
 
 ### Option B: from source
 
@@ -82,6 +83,9 @@ docker compose up --build -d
 
 Compose binds `127.0.0.1:3000`, starts in read-only mode, and stores exports and
 theme packages in separate named volumes.
+
+See [Installation and Updates](docs/INSTALLATION.md) for Codex CLI, Claude
+Desktop, global npm, source, Docker, verification, update, and removal steps.
 
 ## Configuration
 
@@ -119,6 +123,17 @@ manager, or container runtime owns secret injection.
 
 ## MCP Client Setup
 
+Codex CLI:
+
+```powershell
+codex mcp add limesurvey `
+  --env "LIMESURVEY_URL=https://survey.example.com/index.php/admin/remotecontrol" `
+  --env "LIMESURVEY_USERNAME=rpc-user" `
+  --env "LIMESURVEY_PASSWORD=replace-me" `
+  --env "LIMESURVEY_READ_ONLY=true" `
+  -- npx -y limesurvey-mcp-server@1.2.2
+```
+
 Example for clients that support `mcpServers` configuration:
 
 ```json
@@ -126,7 +141,7 @@ Example for clients that support `mcpServers` configuration:
   "mcpServers": {
     "limesurvey": {
       "command": "npx",
-      "args": ["-y", "limesurvey-mcp-server"],
+      "args": ["-y", "limesurvey-mcp-server@1.2.2"],
       "env": {
         "LIMESURVEY_URL": "https://survey.example.com/index.php/admin/remotecontrol",
         "LIMESURVEY_USERNAME": "rpc-user",
@@ -141,6 +156,10 @@ Example for clients that support `mcpServers` configuration:
 
 For a local build, replace `npx` with `node` and use the absolute path to
 `dist/src/index.js` as the first argument.
+
+Restart the MCP client after changing its configuration. Then call
+`limesurvey_get_session_key` and `limesurvey_list_surveys` to verify
+authentication and read access before enabling writes.
 
 ## Streamable HTTP
 

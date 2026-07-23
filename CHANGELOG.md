@@ -5,6 +5,26 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.2] - 2026-07-23
+
+### Added
+
+- Public npm distribution documentation for Codex CLI, MCP JSON clients,
+  global npm, source, and Docker installations.
+- Installation verification, update, removal, and troubleshooting guidance.
+
+### Changed
+
+- Upgrade to Zod 4, TypeScript 7, Node.js 26 type definitions, and current
+  GitHub Actions majors.
+- Harden the npm Trusted Publishing workflow with release-tag validation and
+  serialized publishes.
+
+### Fixed
+
+- Adapt recursive JSON and record schemas to Zod 4 while preserving MCP input
+  validation for participant filters and workflow tools.
+
 ## [1.2.1] - 2026-07-23
 
 ### Added
@@ -50,6 +70,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - JSON-RPC 1.0 client with session reuse, retry, timeouts, structured MCP output,
   Zod validation, annotations, stdio transport, and mocked endpoint tests.
 
+[1.2.2]: https://github.com/Wagner-Emden-IT-Services/limesurvey-mcp-server/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/Wagner-Emden-IT-Services/limesurvey-mcp-server/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/Wagner-Emden-IT-Services/limesurvey-mcp-server/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/Wagner-Emden-IT-Services/limesurvey-mcp-server/compare/v1.0.0...v1.1.0
