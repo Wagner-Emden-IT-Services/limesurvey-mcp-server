@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
@@ -34,6 +35,9 @@ test("completes an MCP handshake, lists schemas, and calls a LimeSurvey tool", a
   await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
 
   try {
+    const packageJson = JSON.parse(await readFile("package.json", "utf8")) as { version: string };
+    assert.equal(client.getServerVersion()?.version, packageJson.version);
+
     const listed = await client.listTools();
     assert.equal(listed.tools.length, 68);
     const listSurveys = listed.tools.find((tool) => tool.name === "limesurvey_list_surveys");
