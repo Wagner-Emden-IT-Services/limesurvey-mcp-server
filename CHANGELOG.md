@@ -5,6 +5,14 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.3] - 2026-07-23
+
+### Changed
+
+- Re-publish to npm via OIDC Trusted Publishing so the release carries build
+  provenance and is attributed to the GitHub Actions publisher. No functional
+  or API changes.
+
 ## [1.2.2] - 2026-07-23
 
 ### Added
