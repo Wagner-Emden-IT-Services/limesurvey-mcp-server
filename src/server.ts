@@ -89,7 +89,8 @@ export function createServer(
               `The tool limesurvey_${definition.method} is disabled because LIMESURVEY_READ_ONLY=true.`,
             );
           }
-          const result = await client.call(definition.method, buildRpcParams(definition, rawInput));
+          const preparedInput = definition.prepare ? await definition.prepare(rawInput, config) : rawInput;
+          const result = await client.call(definition.method, buildRpcParams(definition, preparedInput));
           const output = prepareResult(definition.method, result, config.maxResponseChars);
           return {
             content: [{ type: "text" as const, text: textResult(output, format) }],
