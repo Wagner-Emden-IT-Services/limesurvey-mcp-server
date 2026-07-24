@@ -63,11 +63,13 @@ function errorMessage(error: unknown): { message: string; code?: string; details
   return { message: error instanceof Error ? error.message : String(error) };
 }
 
+export const SERVER_VERSION = "1.3.0";
+
 export function createServer(
   config: LimeSurveyConfig,
   fetchImpl?: FetchImplementation,
 ): { server: McpServer; client: LimeSurveyClient } {
-  const server = new McpServer({ name: "limesurvey-mcp-server", version: "1.2.3" });
+  const server = new McpServer({ name: "limesurvey-mcp-server", version: SERVER_VERSION });
   const client = new LimeSurveyClient(config, fetchImpl);
 
   for (const definition of toolDefinitions) {
@@ -89,7 +91,8 @@ export function createServer(
               `The tool limesurvey_${definition.method} is disabled because LIMESURVEY_READ_ONLY=true.`,
             );
           }
-          const result = await client.call(definition.method, buildRpcParams(definition, rawInput));
+          const preparedInput = definition.prepare ? await definition.prepare(rawInput, config) : rawInput;
+          const result = await client.call(definition.method, buildRpcParams(definition, preparedInput));
           const output = prepareResult(definition.method, result, config.maxResponseChars);
           return {
             content: [{ type: "text" as const, text: textResult(output, format) }],
