@@ -8,15 +8,16 @@
 
 A production-oriented [Model Context Protocol](https://modelcontextprotocol.io/)
 server for the [LimeSurvey RemoteControl 2 API](https://www.limesurvey.org/manual/RemoteControl_2_API).
-It exposes all 56 documented RemoteControl methods plus 12 guarded workflow tools
-for discovery, participants, exports, and responsive survey themes.
+It exposes all 56 documented RemoteControl methods plus 15 guarded workflow tools
+for discovery, participants, exports, capability detection, and responsive
+survey themes.
 
 This community project is not affiliated with or endorsed by LimeSurvey GmbH.
 
 ## Features
 
 - **Complete RemoteControl coverage:** all 56 documented JSON-RPC methods
-- **68 MCP tools:** official methods plus focused workflow and theme tools
+- **71 MCP tools:** official methods plus focused workflow and theme tools
 - **Modern MCP contracts:** strict Zod schemas, structured output, and annotations
 - **Safe write access:** server-enforced read-only mode and explicit confirmations
 - **Session management:** cached credentials, one retry after an invalid session,
@@ -31,9 +32,9 @@ This community project is not affiliated with or endorsed by LimeSurvey GmbH.
 | Area | Tools | Count |
 |---|---|---:|
 | Official RemoteControl 2 API | Sessions, settings, surveys, languages, groups, questions, participants, quotas, users, responses, files, exports | 56 |
-| Workflow helpers | Survey search, language normalization, participant helpers, export format discovery, secure file exports | 8 |
+| Workflow helpers | Survey search, language normalization, participant helpers, export format discovery, secure file exports, experimental survey-structure export, capability/instance info, best-effort theme listing | 11 |
 | Survey themes | Generate, validate, publication guide, assign to survey | 4 |
-| **Total** | | **68** |
+| **Total** | | **71** |
 
 Official tools are named `limesurvey_<remotecontrol_method>`. Run the MCP
 Inspector to view every current schema:
@@ -265,11 +266,38 @@ ID embedded in the file when that ID is free, `destination_survey_id`
 overrides it when set, and on an ID collision LimeSurvey silently assigns a
 random 6-digit `sid` instead of failing.
 
+## Capability Detection
+
+`limesurvey_get_instance_info` reports read-only mode, the
+experimental-methods flag, which of `LIMESURVEY_EXPORT_DIR`/
+`LIMESURVEY_IMPORT_DIR`/`LIMESURVEY_THEME_DIR` are configured, and best-effort
+LimeSurvey version/database version/default theme via `get_site_settings`.
+Each LimeSurvey-side field degrades independently to `null` with a
+`permission_note` when the service account is not a superadmin, instead of
+failing the whole call. Call this before relying on file export/import or
+theming tools.
+
+`limesurvey_list_installed_themes` best-effort reports the current default
+theme the same way. LimeSurvey RemoteControl2 has no official method to
+enumerate installed themes, so the response always includes the documented
+admin-UI fallback (Configuration > Advanced > Themes > Survey themes) for the
+complete list.
+
 ## Experimental Extension
 
 `list_response_exports` is not part of the official RemoteControl method list.
 Its workflow tool is disabled unless the matching LimeSurvey extension is
 installed and `LIMESURVEY_ENABLE_EXPERIMENTAL_METHODS=true` is set.
+
+`export_survey` is likewise not part of the official RemoteControl method list
+(verified 2026-07-24 against api.limesurvey.org and the LimeSurvey source) —
+RemoteControl2 has no method to export a survey's structure at all. Its
+workflow tool requires `LIMESURVEY_ENABLE_EXPERIMENTAL_METHODS=true` and only
+succeeds if a custom LimeSurvey plugin provides an equivalent method;
+otherwise it always fails with a structured `EXPORT_UNSUPPORTED` error.
+Prefer property-based verification (`list_groups`, `list_questions`,
+`get_survey_properties`, `get_group_properties`, `get_question_properties`)
+over round-trip diffing against this tool.
 
 ## Development
 
@@ -280,7 +308,7 @@ npm run inspect
 npm pack --dry-run
 ```
 
-The 25 automated tests use mocked LimeSurvey JSON-RPC responses and cover:
+The 34 automated tests use mocked LimeSurvey JSON-RPC responses and cover:
 
 - JSON-RPC 1.0 ordering, session reuse, renewal, and secret handling
 - MCP handshake, schemas, annotations, confirmations, and read-only enforcement
@@ -288,11 +316,13 @@ The 25 automated tests use mocked LimeSurvey JSON-RPC responses and cover:
 - workflow filtering and secure export files
 - survey theme ZIP generation, validation, publication guidance, and assignment
 - secure file imports via `import_data_path` for survey, group, and question tools
+- capability detection (`get_instance_info`, `list_installed_themes`) and the
+  experimental, permission-degrading `export_survey` tool
 
 No live LimeSurvey credentials are required. Content evaluations must be created
 against a stable test instance; see [evaluations/README.md](evaluations/README.md).
 
-An opt-in live integration runner exercises all 68 tools against disposable,
+An opt-in live integration runner exercises all 71 tools against disposable,
 prefixed test records:
 
 ```bash
