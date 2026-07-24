@@ -111,11 +111,13 @@ const generatedExportPaths = [];
 try {
   await Promise.all([server.connect(serverTransport), mcpClient.connect(clientTransport)]);
   const listed = await mcpClient.listTools();
-  if (listed.tools.length !== 68) throw new Error(`Expected 68 tools, received ${listed.tools.length}.`);
+  if (listed.tools.length !== 71) throw new Error(`Expected 71 tools, received ${listed.tools.length}.`);
 
   await invoke(mcpClient, "limesurvey_get_session_key");
   await attempt(mcpClient, "limesurvey_get_available_site_settings");
   await attempt(mcpClient, "limesurvey_get_site_settings", { setting_name: "sitename" });
+  await attempt(mcpClient, "limesurvey_get_instance_info");
+  await attempt(mcpClient, "limesurvey_list_installed_themes");
   await attempt(mcpClient, "limesurvey_list_surveys");
   await attempt(mcpClient, "limesurvey_list_survey_groups");
   await attempt(mcpClient, "limesurvey_list_users", { username: process.env.LIMESURVEY_USERNAME });
@@ -526,6 +528,9 @@ try {
   await attempt(mcpClient, "limesurvey_list_response_export_formats", {}, {
     expectedError: /disabled|extension/i,
   });
+  await attempt(mcpClient, "limesurvey_export_survey", { survey_id: primarySurveyId }, {
+    expectedError: /RemoteControl2/,
+  });
 
   const generated = await attempt(mcpClient, "limesurvey_generate_survey_theme", {
     theme_name: `mcp_live_${stamp}`,
@@ -576,7 +581,7 @@ try {
   await server.close().catch(() => {});
 }
 
-const allTools = 68;
+const allTools = 71;
 const failed = results.filter((item) => item.status === "failed");
 const passed = results.filter((item) => item.status === "passed" || item.status === "expected_error");
 console.log(JSON.stringify({
