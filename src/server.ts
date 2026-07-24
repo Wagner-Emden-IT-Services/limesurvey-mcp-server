@@ -63,7 +63,7 @@ function errorMessage(error: unknown): { message: string; code?: string; details
   return { message: error instanceof Error ? error.message : String(error) };
 }
 
-export const SERVER_VERSION = "1.2.3";
+export const SERVER_VERSION = "1.3.0";
 
 export function createServer(
   config: LimeSurveyConfig,
