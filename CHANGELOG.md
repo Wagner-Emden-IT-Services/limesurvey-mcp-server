@@ -16,6 +16,27 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   tool call instead of an inline base64 payload. New `LIMESURVEY_IMPORT_DIR`
   and `LIMESURVEY_MAX_IMPORT_BYTES` (default 50 MiB) environment variables,
   and dedicated `IMPORT_*` error codes with `recovery` guidance.
+- `get_instance_info` workflow tool: reports read-only mode, the
+  experimental-methods flag, configured export/import/theme directories, and
+  best-effort LimeSurvey version/database version/default theme (each
+  `get_site_settings` call degrades independently to `null` with a
+  `permission_note` when the service account is not a superadmin).
+- `list_installed_themes` workflow tool: best-effort reports the current
+  default theme and always includes the documented LimeSurvey admin-UI
+  fallback, since RemoteControl2 has no official method to enumerate
+  installed themes.
+- `export_survey` workflow tool (experimental, gated behind
+  `LIMESURVEY_ENABLE_EXPERIMENTAL_METHODS`, same precedent as
+  `list_response_exports`): attempts to export a survey's structure and write
+  it inside `LIMESURVEY_EXPORT_DIR`, returning a path instead of base64.
+  `export_survey` is not part of the officially documented LimeSurvey
+  RemoteControl2 API (verified 2026-07-24 against api.limesurvey.org and the
+  LimeSurvey source), so this only works against an instance with a custom
+  plugin providing an equivalent method; it otherwise always fails with a
+  structured `EXPORT_UNSUPPORTED` error recommending property-based
+  verification (`list_groups`, `list_questions`, `get_survey_properties`,
+  `get_group_properties`, `get_question_properties`) instead of round-trip
+  diffing.
 
 ### Changed
 
@@ -23,6 +44,15 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   assigned: it keeps the ID embedded in the file when free, honors
   `destination_survey_id` when provided, and silently assigns a random
   6-digit ID on collision instead of failing.
+- The `LIMESURVEY_EXPORT_DIR`/`LIMESURVEY_THEME_DIR` "not configured" errors
+  now mention that changing the environment requires a full MCP client
+  restart; reconnecting alone does not reload environment variables.
+
+### Fixed
+
+- Workflow-tool errors (`workflow-tools.ts`) now include the `LimeSurveyError`
+  `details` object (for example a `recovery` hint) in their structured
+  output, matching the official-tool error path in `server.ts`.
 
 ## [1.2.3] - 2026-07-23
 
