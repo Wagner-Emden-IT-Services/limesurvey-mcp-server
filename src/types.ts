@@ -24,6 +24,8 @@ export interface LimeSurveyConfig {
   enableExperimentalMethods?: boolean;
   exportDir?: string;
   maxExportBytes?: number;
+  importDir?: string;
+  maxImportBytes?: number;
   themeDir?: string;
   maxThemeAssetBytes?: number;
   transport?: "stdio" | "http";
