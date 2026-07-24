@@ -5,6 +5,25 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `import_data_path` parameter for `import_survey`, `import_group`, and
+  `import_question`: the server reads and base64-encodes a local file from
+  `LIMESURVEY_IMPORT_DIR` (falling back to `LIMESURVEY_EXPORT_DIR`), so a
+  survey, group, or question file of any size can be imported in a single
+  tool call instead of an inline base64 payload. New `LIMESURVEY_IMPORT_DIR`
+  and `LIMESURVEY_MAX_IMPORT_BYTES` (default 50 MiB) environment variables,
+  and dedicated `IMPORT_*` error codes with `recovery` guidance.
+
+### Changed
+
+- Document that `import_survey` returns the survey ID LimeSurvey actually
+  assigned: it keeps the ID embedded in the file when free, honors
+  `destination_survey_id` when provided, and silently assigns a random
+  6-digit ID on collision instead of failing.
+
 ## [1.2.3] - 2026-07-23
 
 ### Changed
