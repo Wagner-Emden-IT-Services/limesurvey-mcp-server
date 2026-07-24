@@ -1,5 +1,7 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { z } from "zod";
-import type { JsonValue } from "./types.js";
+import { LimeSurveyError, type JsonValue, type LimeSurveyConfig } from "./types.js";
 
 export type ResponseFormat = "json" | "markdown";
 
@@ -15,6 +17,7 @@ export interface ToolDefinition {
   description: string;
   inputSchema: z.ZodObject<z.ZodRawShape>;
   parameters: ParameterDefinition[];
+  prepare?: (input: Record<string, unknown>, config: LimeSurveyConfig) => Promise<Record<string, unknown>>;
   annotations: {
     readOnlyHint: boolean;
     destructiveHint: boolean;
@@ -58,9 +61,16 @@ function define(
   summary: string,
   access: "read" | "write" | "delete",
   parameters: ParameterDefinition[] = [],
+  options: {
+    prepare?: ToolDefinition["prepare"];
+    extraSchema?: Record<string, z.ZodTypeAny>;
+  } = {},
 ): ToolDefinition {
   const shape: Record<string, z.ZodTypeAny> = { response_format: responseFormatSchema };
   for (const parameter of parameters) shape[parameter.key] = parameter.schema;
+  if (options.extraSchema) {
+    for (const [key, schema] of Object.entries(options.extraSchema)) shape[key] = schema;
+  }
   let confirmation = "";
   if (access === "delete") {
     shape.confirm_destructive_action = z.literal(true).describe("Required acknowledgement of the permanent deletion.");
@@ -78,6 +88,7 @@ function define(
     description: `${summary}${confirmation}\n\nCalls LimeSurvey RemoteControl method \`${method}\`. Authentication uses the configured service account; do not provide a session key.`,
     inputSchema: z.object(shape).strict(),
     parameters,
+    ...(options.prepare ? { prepare: options.prepare } : {}),
     annotations: {
       readOnlyHint: access === "read",
       destructiveHint: access === "delete",
@@ -94,6 +105,106 @@ const language = (key = "language") => p(key, optionalString("LimeSurvey languag
 const propertyNames = (key: string, resource: string) =>
   p(key, optionalStringArray(`Properties to return for the ${resource}; null returns all available properties.`), null);
 
+const maxInlineImportChars = 200_000;
+
+const importDataPathSchema = (resource: string) =>
+  z
+    .string()
+    .min(1)
+    .optional()
+    .describe(
+      `Local file path to a ${resource} file. The server reads and base64-encodes it, so use this instead of inline ` +
+        `import_data for files at or above roughly 50 KB. The file must live inside LIMESURVEY_IMPORT_DIR (or ` +
+        `LIMESURVEY_EXPORT_DIR as a fallback). Exactly one of import_data or import_data_path must be set.`,
+    );
+
+/**
+ * Shared prepare() hook for import_survey, import_group, and import_question: resolves the
+ * MCP-only import_data_path into an inline base64 import_data before buildRpcParams runs.
+ */
+async function prepareImportData(
+  input: Record<string, unknown>,
+  config: LimeSurveyConfig,
+): Promise<Record<string, unknown>> {
+  const importData = input.import_data;
+  const importDataPath = input.import_data_path;
+  const hasData = typeof importData === "string";
+  const hasPath = typeof importDataPath === "string";
+  if (hasData === hasPath) {
+    throw new LimeSurveyError(
+      "Exactly one of import_data or import_data_path must be provided.",
+      "IMPORT_PARAM_CONFLICT",
+      { recovery: "Set import_data for a small inline base64 payload, or import_data_path for a local file; never both or neither." },
+    );
+  }
+
+  if (hasData) {
+    if (importData.length > maxInlineImportChars) {
+      throw new LimeSurveyError(
+        `import_data is ${importData.length} characters, which is too large to inline.`,
+        "IMPORT_PAYLOAD_TOO_LARGE",
+        { recovery: "Use import_data_path with a local file inside LIMESURVEY_IMPORT_DIR instead of inline base64." },
+      );
+    }
+    return input;
+  }
+
+  if (typeof importDataPath !== "string") {
+    // Unreachable: the hasData === hasPath check above guarantees a string here.
+    throw new LimeSurveyError(
+      "Exactly one of import_data or import_data_path must be provided.",
+      "IMPORT_PARAM_CONFLICT",
+    );
+  }
+
+  const importDir = config.importDir ?? config.exportDir;
+  if (!importDir) {
+    throw new LimeSurveyError(
+      "No import directory is configured.",
+      "IMPORT_DIR_NOT_CONFIGURED",
+      {
+        recovery:
+          "Set LIMESURVEY_IMPORT_DIR (or LIMESURVEY_EXPORT_DIR as a fallback) and fully restart Claude Code; " +
+          "reconnecting the MCP server alone does not reload environment variables.",
+      },
+    );
+  }
+
+  const root = path.resolve(importDir);
+  const target = path.resolve(root, importDataPath);
+  const relative = path.relative(root, target);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new LimeSurveyError(
+      "import_data_path resolves outside the configured import directory.",
+      "IMPORT_PATH_OUTSIDE_DIR",
+      { recovery: `Use a path inside ${root}.` },
+    );
+  }
+
+  let buffer: Buffer;
+  try {
+    buffer = await readFile(target);
+  } catch {
+    throw new LimeSurveyError(
+      "The import file was not found or could not be read.",
+      "IMPORT_FILE_NOT_FOUND",
+      { recovery: `Verify that ${target} exists and is readable by the server process.` },
+    );
+  }
+
+  const maxBytes = config.maxImportBytes ?? 50 * 1024 * 1024;
+  if (buffer.byteLength > maxBytes) {
+    throw new LimeSurveyError(
+      `The import file is ${buffer.byteLength} bytes, which exceeds the configured limit.`,
+      "IMPORT_FILE_TOO_LARGE",
+      { recovery: `Limit is ${maxBytes} bytes (LIMESURVEY_MAX_IMPORT_BYTES). Reduce the file size or raise the limit.` },
+    );
+  }
+
+  const { import_data_path: _omit, ...rest } = input;
+  return { ...rest, import_data: buffer.toString("base64") };
+}
+
 export const toolDefinitions: ToolDefinition[] = [
   define("get_session_key", "Connect to LimeSurvey", "Open and cache an authenticated RemoteControl session without exposing its key.", "write"),
   define("release_session_key", "Disconnect from LimeSurvey", "Release the cached RemoteControl session.", "write"),
@@ -107,12 +218,24 @@ export const toolDefinitions: ToolDefinition[] = [
     p("format", z.enum(["A", "G", "S"]).optional().describe("Question display format: all, group-by-group, or single question."), "G"),
   ]),
   define("delete_survey", "Delete survey", "Permanently delete a survey.", "delete", [surveyId()]),
-  define("import_survey", "Import survey", "Import a base64-encoded LSA, CSV, TXT, or LSS survey.", "write", [
-    p("import_data", string("Base64-encoded survey file contents.")),
-    p("import_data_type", z.enum(["lsa", "csv", "txt", "lss"]).describe("Import file type.")),
-    p("new_survey_name", optionalString("Optional replacement survey name."), null),
-    p("destination_survey_id", optionalInteger("Optional desired ID for the imported survey."), null),
-  ]),
+  define(
+    "import_survey",
+    "Import survey",
+    "Import an LSA, CSV, TXT, or LSS survey. Use import_data_path for files at or above roughly 50 KB so the " +
+      "server reads and base64-encodes them itself; reserve inline import_data for small files under 200,000 " +
+      "characters of base64 text. The returned sid is the survey ID LimeSurvey actually used: it keeps the ID " +
+      "embedded in the file when that ID is free, destination_survey_id overrides it when set, and on an ID " +
+      "collision LimeSurvey silently assigns a random 6-digit sid instead of failing (verified against the " +
+      "LimeSurvey XMLImportSurvey/insertNewSurvey source).",
+    "write",
+    [
+      p("import_data", string("Base64-encoded survey file contents; omit when using import_data_path.").optional()),
+      p("import_data_type", z.enum(["lsa", "csv", "txt", "lss"]).describe("Import file type.")),
+      p("new_survey_name", optionalString("Optional replacement survey name."), null),
+      p("destination_survey_id", optionalInteger("Optional desired ID for the imported survey."), null),
+    ],
+    { prepare: prepareImportData, extraSchema: { import_data_path: importDataPathSchema("survey") } },
+  ),
   define("copy_survey", "Copy survey", "Copy an existing survey under a new name.", "write", [
     p("source_survey_id", positiveInteger("ID of the survey to copy.")),
     p("new_name", string("Name for the copied survey.")),
@@ -149,26 +272,42 @@ export const toolDefinitions: ToolDefinition[] = [
 
   define("add_group", "Create question group", "Add an empty question group to a survey.", "write", [surveyId(), p("title", string("Question-group title.")), p("description", z.string().optional().describe("Question-group description."), "")]),
   define("delete_group", "Delete question group", "Delete a question group from a survey.", "delete", [surveyId(), groupId()]),
-  define("import_group", "Import question group", "Import a base64-encoded question group into a survey.", "write", [
-    surveyId(),
-    p("import_data", string("Base64-encoded group file contents.")),
-    p("import_data_type", string("Import type supported by the LimeSurvey instance, normally lsg.")),
-    p("new_group_name", optionalString("Optional replacement group name."), null),
-    p("new_group_description", optionalString("Optional replacement group description."), null),
-  ]),
+  define(
+    "import_group",
+    "Import question group",
+    "Import a question group into a survey. Use import_data_path for files at or above roughly 50 KB instead of " +
+      "inline import_data.",
+    "write",
+    [
+      surveyId(),
+      p("import_data", string("Base64-encoded group file contents; omit when using import_data_path.").optional()),
+      p("import_data_type", string("Import type supported by the LimeSurvey instance, normally lsg.")),
+      p("new_group_name", optionalString("Optional replacement group name."), null),
+      p("new_group_description", optionalString("Optional replacement group description."), null),
+    ],
+    { prepare: prepareImportData, extraSchema: { import_data_path: importDataPathSchema("question group") } },
+  ),
   define("get_group_properties", "Get group properties", "Read selected question-group properties.", "read", [groupId(), propertyNames("properties", "question group"), language()]),
   define("set_group_properties", "Set group properties", "Update question-group properties.", "write", [groupId(), p("data", jsonObject("Group property names mapped to new values."))]),
 
   define("delete_question", "Delete question", "Delete a question from its survey.", "delete", [questionId()]),
-  define("import_question", "Import question", "Import a base64-encoded question into a survey group.", "write", [
-    surveyId(), groupId(),
-    p("import_data", string("Base64-encoded question file contents.")),
-    p("import_data_type", string("Import type supported by the LimeSurvey instance, normally lsq.")),
-    p("mandatory", z.enum(["Y", "N"]).optional().describe("Whether the imported question is mandatory."), "N"),
-    p("new_question_title", optionalString("Optional replacement question code/title."), null),
-    p("new_question_text", optionalString("Optional replacement question text."), null),
-    p("new_question_help", optionalString("Optional replacement help text."), null),
-  ]),
+  define(
+    "import_question",
+    "Import question",
+    "Import a question into a survey group. Use import_data_path for files at or above roughly 50 KB instead of " +
+      "inline import_data.",
+    "write",
+    [
+      surveyId(), groupId(),
+      p("import_data", string("Base64-encoded question file contents; omit when using import_data_path.").optional()),
+      p("import_data_type", string("Import type supported by the LimeSurvey instance, normally lsq.")),
+      p("mandatory", z.enum(["Y", "N"]).optional().describe("Whether the imported question is mandatory."), "N"),
+      p("new_question_title", optionalString("Optional replacement question code/title."), null),
+      p("new_question_text", optionalString("Optional replacement question text."), null),
+      p("new_question_help", optionalString("Optional replacement help text."), null),
+    ],
+    { prepare: prepareImportData, extraSchema: { import_data_path: importDataPathSchema("question") } },
+  ),
   define("get_question_properties", "Get question properties", "Read selected question properties.", "read", [questionId(), propertyNames("properties", "question"), language()]),
   define("set_question_properties", "Set question properties", "Update question properties.", "write", [questionId(), p("data", jsonObject("Question property names mapped to new values.")), language()]),
 
