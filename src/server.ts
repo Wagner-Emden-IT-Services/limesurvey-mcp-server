@@ -63,11 +63,13 @@ function errorMessage(error: unknown): { message: string; code?: string; details
   return { message: error instanceof Error ? error.message : String(error) };
 }
 
+export const SERVER_VERSION = "1.2.3";
+
 export function createServer(
   config: LimeSurveyConfig,
   fetchImpl?: FetchImplementation,
 ): { server: McpServer; client: LimeSurveyClient } {
-  const server = new McpServer({ name: "limesurvey-mcp-server", version: "1.2.3" });
+  const server = new McpServer({ name: "limesurvey-mcp-server", version: SERVER_VERSION });
   const client = new LimeSurveyClient(config, fetchImpl);
 
   for (const definition of toolDefinitions) {

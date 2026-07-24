@@ -1,11 +1,14 @@
 #!/usr/bin/env node
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { loadConfig } from "./config.js";
+import { envPreflightWarnings, loadConfig } from "./config.js";
 import { startHttpServer } from "./http-server.js";
 import { createServer } from "./server.js";
 
 async function main(): Promise<void> {
   const config = loadConfig();
+  for (const warning of envPreflightWarnings(config)) {
+    console.error(`[preflight] ${warning}`);
+  }
   if (config.transport === "http") {
     const running = await startHttpServer(config);
     console.error(`LimeSurvey MCP Streamable HTTP server listening at ${running.url}`);
