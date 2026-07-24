@@ -5,7 +5,7 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.3.0] - 2026-07-24
 
 ### Added
 
@@ -150,6 +150,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - JSON-RPC 1.0 client with session reuse, retry, timeouts, structured MCP output,
   Zod validation, annotations, stdio transport, and mocked endpoint tests.
 
+[1.3.0]: https://github.com/Wagner-Emden-IT-Services/limesurvey-mcp-server/compare/v1.2.3...v1.3.0
+[1.2.3]: https://github.com/Wagner-Emden-IT-Services/limesurvey-mcp-server/compare/v1.2.2...v1.2.3
 [1.2.2]: https://github.com/Wagner-Emden-IT-Services/limesurvey-mcp-server/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/Wagner-Emden-IT-Services/limesurvey-mcp-server/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/Wagner-Emden-IT-Services/limesurvey-mcp-server/compare/v1.1.0...v1.2.0
