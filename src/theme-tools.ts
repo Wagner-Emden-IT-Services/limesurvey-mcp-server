@@ -98,7 +98,8 @@ function darken(hex: string, factor = 0.82): string {
 function safeThemeTarget(config: LimeSurveyConfig, fileName: string): { root: string; target: string } {
   if (!config.themeDir) {
     throw new LimeSurveyError(
-      "LIMESURVEY_THEME_DIR is not configured. Set it to a dedicated directory for generated theme packages.",
+      "LIMESURVEY_THEME_DIR is not configured. Set it to a dedicated directory for generated theme packages, then "
+        + "fully restart the MCP client process; reconnecting alone does not reload environment variables.",
     );
   }
   if (
