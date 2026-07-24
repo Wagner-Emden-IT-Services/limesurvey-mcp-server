@@ -112,3 +112,34 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): LimeSurveyConf
   if (allowedOrigins) config.httpAllowedOrigins = allowedOrigins;
   return config;
 }
+
+const RESTART_HINT = "Environment changes require a full Claude Code restart; reconnecting the MCP server does not "
+  + "reload environment variables.";
+
+/**
+ * Startup preflight (ISSUE-003/CAP-03): reports which optional directories are missing and what that
+ * disables, before any tool call fails at runtime. Callers print these (index.ts writes them to stderr).
+ */
+export function envPreflightWarnings(config: LimeSurveyConfig): string[] {
+  const warnings: string[] = [];
+  if (!config.exportDir) {
+    warnings.push(
+      "LIMESURVEY_EXPORT_DIR is not set: file-export tools (export_responses_to_file, "
+        + `export_statistics_to_file, export_survey_to_file, ...) are disabled until it is configured. ${RESTART_HINT}`,
+    );
+  }
+  if (!config.importDir && !config.exportDir) {
+    warnings.push(
+      "LIMESURVEY_IMPORT_DIR is not set (and LIMESURVEY_EXPORT_DIR is not set as a fallback): "
+        + `import_data_path is disabled for import_survey/import_group/import_question until one of them is `
+        + `configured. ${RESTART_HINT}`,
+    );
+  }
+  if (!config.themeDir) {
+    warnings.push(
+      "LIMESURVEY_THEME_DIR is not set: theme generation, validation, and packaging tools are disabled until "
+        + `it is configured. ${RESTART_HINT}`,
+    );
+  }
+  return warnings;
+}
