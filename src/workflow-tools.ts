@@ -1,9 +1,11 @@
 import { createHash, randomUUID } from "node:crypto";
-import { chmod, mkdir, writeFile } from "node:fs/promises";
+import { access, chmod, mkdir, writeFile } from "node:fs/promises";
+import { constants as fsConstants } from "node:fs";
 import path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { LimeSurveyClient } from "./client.js";
+import { SERVER_VERSION } from "./server.js";
 import { buildRpcParams, jsonValueSchema, toolDefinitions } from "./tool-definitions.js";
 import { LimeSurveyError, type JsonValue, type LimeSurveyConfig } from "./types.js";
 
@@ -79,6 +81,28 @@ async function bestEffortSiteSetting(client: LimeSurveyClient, settingName: stri
   } catch {
     return null;
   }
+}
+
+/** Local filesystem check for get_instance_info's directories field. No RemoteControl call involved. */
+async function directoryInfo(configuredPath: string | undefined): Promise<JsonValue> {
+  if (!configuredPath) return { configured: false, exists: false, writable: false };
+  let exists = false;
+  try {
+    await access(configuredPath, fsConstants.F_OK);
+    exists = true;
+  } catch {
+    exists = false;
+  }
+  let writable = false;
+  if (exists) {
+    try {
+      await access(configuredPath, fsConstants.W_OK);
+      writable = true;
+    } catch {
+      writable = false;
+    }
+  }
+  return { configured: true, path: configuredPath, exists, writable };
 }
 
 function decodeBase64(value: JsonValue, maxBytes: number): Buffer {
@@ -376,127 +400,133 @@ export function registerWorkflowTools(
     "limesurvey_get_instance_info",
     {
       title: "Get MCP server and LimeSurvey capability info",
-      description: "Report server-side configuration (read-only mode, configured export/import/theme directories, "
-        + "the experimental-method flag) plus best-effort LimeSurvey version, database version, and default theme "
-        + "via get_site_settings. LimeSurvey RemoteControl2 has no official capability/health endpoint (verified "
-        + "2026-07-24 against api.limesurvey.org and the LimeSurvey source), so the LimeSurvey-side fields degrade "
-        + "to null with a permission_note when the service account is not a superadmin. Call this before relying on "
-        + "file export/import or theming tools.",
-      inputSchema: z.object({}).strict(),
+      description: "Report server-side configuration without any RemoteControl call by default: server_version, "
+        + "instance_host, transport, read_only, experimental_methods_enabled, configured export/import/theme "
+        + "directories (each with a local exists/writable check), and a capabilities summary. Set "
+        + "probe_instance=true to additionally call list_surveys (connectivity/auth proof, count only) and "
+        + "get_site_settings(\"versionnumber\") — the latter requires a superadmin service account and degrades to "
+        + "permission_level=\"standard\" with instance_version=null otherwise. Call this before relying on file "
+        + "export/import or theming tools.",
+      inputSchema: z.object({
+        probe_instance: z.boolean().default(false)
+          .describe("Also call list_surveys and get_site_settings to probe live connectivity, auth, and version/permission level."),
+      }).strict(),
       outputSchema,
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async () => run(config, "get_instance_info", false, async () => {
-      const [version, dbVersion, defaultTheme] = await Promise.all([
-        bestEffortSiteSetting(client, "versionnumber"),
-        bestEffortSiteSetting(client, "dbversionnumber"),
-        bestEffortSiteSetting(client, "defaulttemplate"),
+    async ({ probe_instance }) => run(config, "get_instance_info", false, async () => {
+      const [exportDir, importDir, themeDir] = await Promise.all([
+        directoryInfo(config.exportDir),
+        directoryInfo(config.importDir),
+        directoryInfo(config.themeDir),
       ]);
-      const permissionNote = version === null && dbVersion === null && defaultTheme === null
-        ? "get_site_settings requires a superadmin-level service account for these fields. Read the version from "
-          + "the LimeSurvey admin footer instead."
-        : null;
-      return {
-        read_only_mode: config.readOnly ?? false,
+      const base: Record<string, JsonValue> = {
+        server_version: SERVER_VERSION,
+        instance_host: config.url.host,
+        transport: config.transport ?? "stdio",
+        read_only: config.readOnly ?? false,
         experimental_methods_enabled: config.enableExperimentalMethods ?? false,
-        configured_directories: {
-          export_dir: config.exportDir ?? null,
-          import_dir: config.importDir ?? null,
-          theme_dir: config.themeDir ?? null,
+        directories: { export_dir: exportDir, import_dir: importDir, theme_dir: themeDir },
+        capabilities: {
+          import_via_path: true,
+          export_survey_to_file: config.enableExperimentalMethods ?? false,
+          list_installed_themes: true,
+          theme_generation: Boolean(config.themeDir),
         },
-        limesurvey: {
-          version,
-          db_version: dbVersion,
-          default_theme: defaultTheme,
-          permission_note: permissionNote,
-        },
-        env_change_note: "Changing LIMESURVEY_*_DIR, LIMESURVEY_READ_ONLY, or LIMESURVEY_ENABLE_EXPERIMENTAL_METHODS "
-          + "requires a full restart of the MCP client process; reconnecting alone does not reload environment "
-          + "variables.",
+        restart_hint: "Environment changes require a full Claude Code restart; reconnecting the MCP server does "
+          + "not reload environment variables.",
       };
-    }),
-  );
+      if (!probe_instance) return base;
 
-  server.registerTool(
-    "limesurvey_list_installed_themes",
-    {
-      title: "List installed LimeSurvey themes (best effort)",
-      description: "LimeSurvey RemoteControl2 has no official method to enumerate installed survey themes "
-        + "(verified 2026-07-24 against api.limesurvey.org and the LimeSurvey source). This tool best-effort "
-        + "reports the current default theme via get_site_settings (requires a superadmin-level service account) "
-        + "and always includes the documented admin-UI fallback for the complete list.",
-      inputSchema: z.object({}).strict(),
-      outputSchema,
-      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    },
-    async () => run(config, "list_installed_themes", false, async () => {
+      let surveyCount: JsonValue = null;
+      try {
+        const surveys = await client.call("list_surveys", [null, null]);
+        surveyCount = Array.isArray(surveys) ? surveys.length : null;
+      } catch {
+        surveyCount = null;
+      }
+
+      const versionNote = "LimeSurvey exposes the version only to superadmins via RemoteControl; read it from the "
+        + "admin UI footer instead.";
+      let instanceVersion: JsonValue = null;
+      let permissionLevel: JsonValue = "standard";
+      let includeVersionNote = false;
+      try {
+        const value = await client.call("get_site_settings", ["versionnumber"]);
+        if (typeof value === "string" && value.length > 0) {
+          instanceVersion = value;
+          permissionLevel = "superadmin";
+        } else if (typeof value === "number") {
+          instanceVersion = String(value);
+          permissionLevel = "superadmin";
+        } else {
+          includeVersionNote = true;
+        }
+      } catch {
+        includeVersionNote = true;
+      }
+
       const defaultTheme = await bestEffortSiteSetting(client, "defaulttemplate");
+
       return {
+        ...base,
+        survey_count: surveyCount,
+        instance_version: instanceVersion,
+        permission_level: permissionLevel,
         default_theme: defaultTheme,
-        status: defaultTheme === null ? "unavailable" : "partial",
-        note: "RemoteControl2 cannot enumerate installed themes; only the current default theme is readable, and "
-          + "only with a superadmin-level service account.",
-        documented_fallback: "Open the LimeSurvey admin UI at Configuration > Advanced > Themes > Survey themes to "
-          + "see every installed theme, or read the theme name from the admin URL "
-          + "(…/admin/themeoptions/sa/update/templatename/<name>) while a theme is open for editing.",
+        ...(includeVersionNote ? { version_note: versionNote } : {}),
       };
     }),
   );
 
   server.registerTool(
-    "limesurvey_export_survey",
+    "limesurvey_export_survey_to_file",
     {
-      title: "Export survey structure (experimental)",
+      title: "Export survey structure to a file (experimental)",
       description: "Attempt to export a survey's structure as .lss and write it inside LIMESURVEY_EXPORT_DIR, "
-        + "returning a path instead of base64. export_survey is not part of the officially documented LimeSurvey "
-        + "RemoteControl2 API (verified 2026-07-24 against api.limesurvey.org and the LimeSurvey source); this tool "
-        + "only works if a custom plugin exposes an equivalent RPC method, so it requires "
-        + "LIMESURVEY_ENABLE_EXPERIMENTAL_METHODS=true and otherwise always fails with a clear EXPORT_UNSUPPORTED "
-        + "error. Prefer property-based verification (list_groups, list_questions, get_survey_properties, "
-        + "get_group_properties, get_question_properties) over round-trip diffing.",
+        + "returning a path instead of base64. Core LimeSurvey RemoteControl2 has no export_survey method "
+        + "(verified 2026-07-24 against api.limesurvey.org and the LimeSurvey source); this tool only works if a "
+        + "custom plugin exposes an equivalent RPC method, so it requires LIMESURVEY_ENABLE_EXPERIMENTAL_METHODS="
+        + "true and otherwise always fails with a clear EXPORT_UNSUPPORTED error. Prefer property-based "
+        + "verification (list_groups, list_questions, get_survey_properties, get_group_properties, "
+        + "get_question_properties) over round-trip diffing.",
       inputSchema: z.object({
         survey_id: surveyId,
-        document_type: z.enum(["lss"]).optional().describe("Structure export format."),
+        document_type: z.literal("lss").default("lss").describe("Structure export format."),
         ...exportFileFields,
       }).strict(),
       outputSchema,
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
-    async (input) => run(config, "export_survey", true, async () => {
+    async (input) => run(config, "export_survey_to_file", true, async () => {
       if (!config.enableExperimentalMethods) {
         throw new LimeSurveyError(
-          "export_survey is not part of the officially documented LimeSurvey RemoteControl2 API.",
+          "Core LimeSurvey RemoteControl2 has no export_survey method.",
           "EXPORT_UNSUPPORTED",
           {
-            recovery: "Set LIMESURVEY_ENABLE_EXPERIMENTAL_METHODS=true to attempt it against a LimeSurvey instance "
-              + "with a custom plugin providing this method, or verify the survey with list_groups, list_questions, "
-              + "and get_survey_properties/get_group_properties/get_question_properties instead.",
+            recovery: "Verify the survey via list_groups, list_questions, and "
+              + "get_survey_properties/get_group_properties/get_question_properties (property-based verification). "
+              + "Only if the instance has an extension providing export_survey, set "
+              + "LIMESURVEY_ENABLE_EXPERIMENTAL_METHODS=true.",
           },
         );
       }
       let data: JsonValue;
       try {
-        data = await client.call("export_survey", [input.survey_id, input.document_type ?? "lss"]);
+        data = await client.call("export_survey", [input.survey_id]);
       } catch (value) {
         throw new LimeSurveyError(
           "This LimeSurvey instance does not support structural survey export via RemoteControl2.",
           "EXPORT_UNSUPPORTED",
           {
-            recovery: "Verify the survey with list_groups, list_questions, and "
-              + "get_survey_properties/get_group_properties/get_question_properties instead, or export manually via "
-              + "the LimeSurvey admin UI (Display/Export > Survey structure (.lss)).",
+            recovery: "Verify the survey via list_groups, list_questions, and "
+              + "get_survey_properties/get_group_properties/get_question_properties (property-based verification), "
+              + "or export manually via the LimeSurvey admin UI (Display/Export > Survey structure (.lss)).",
             cause: value instanceof Error ? value.message : String(value),
           },
         );
       }
-      return saveExport(
-        config,
-        data,
-        input.document_type ?? "lss",
-        input.file_name,
-        input.overwrite,
-        input.confirm_overwrite,
-      );
+      return saveExport(config, data, input.document_type, input.file_name, input.overwrite, input.confirm_overwrite);
     }),
   );
 }
