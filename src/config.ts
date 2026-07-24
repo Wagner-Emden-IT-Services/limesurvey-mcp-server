@@ -84,6 +84,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): LimeSurveyConf
       100 * 1024 * 1024,
       "LIMESURVEY_MAX_EXPORT_BYTES",
     ),
+    maxImportBytes: positiveInteger(
+      env.LIMESURVEY_MAX_IMPORT_BYTES,
+      50 * 1024 * 1024,
+      "LIMESURVEY_MAX_IMPORT_BYTES",
+    ),
     maxThemeAssetBytes: positiveInteger(
       env.LIMESURVEY_MAX_THEME_ASSET_BYTES,
       5 * 1024 * 1024,
@@ -96,6 +101,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): LimeSurveyConf
   };
   const exportDir = env.LIMESURVEY_EXPORT_DIR?.trim();
   if (exportDir) config.exportDir = exportDir;
+  const importDir = env.LIMESURVEY_IMPORT_DIR?.trim();
+  if (importDir) config.importDir = importDir;
   const themeDir = env.LIMESURVEY_THEME_DIR?.trim();
   if (themeDir) config.themeDir = themeDir;
   if (bearerToken) config.httpBearerToken = bearerToken;
