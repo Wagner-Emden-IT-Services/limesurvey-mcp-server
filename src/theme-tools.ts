@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { XMLParser } from "fast-xml-parser";
@@ -430,6 +430,78 @@ async function validateZip(config: LimeSurveyConfig, fileName: string): Promise<
   };
 }
 
+function objectValue(value: JsonValue): Record<string, JsonValue> | undefined {
+  return value !== null && typeof value === "object" && !Array.isArray(value) ? value : undefined;
+}
+
+/** Part A of limesurvey_list_installed_themes: local ZIPs/folders already generated in LIMESURVEY_THEME_DIR. */
+async function listGeneratedThemePackages(themeDir: string | undefined): Promise<{ packages: JsonValue; note: JsonValue }> {
+  if (!themeDir) {
+    return { packages: [], note: "LIMESURVEY_THEME_DIR is not configured; no locally generated theme packages to list." };
+  }
+  let entries;
+  try {
+    entries = await readdir(themeDir, { withFileTypes: true });
+  } catch (value) {
+    return {
+      packages: [],
+      note: `LIMESURVEY_THEME_DIR (${themeDir}) could not be read: ${value instanceof Error ? value.message : String(value)}`,
+    };
+  }
+  const packages = entries
+    .filter((entry) => entry.isDirectory() || (entry.isFile() && entry.name.toLowerCase().endsWith(".zip")))
+    .map((entry) => ({ name: entry.name, path: path.join(themeDir, entry.name) }));
+  return { packages, note: null };
+}
+
+/**
+ * Part B of limesurvey_list_installed_themes: RemoteControl2 cannot enumerate installed themes, but
+ * get_survey_properties(["template"]) works without a superadmin account, so this reports the distinct
+ * templates actually assigned to visible surveys instead. Never throws; degrades to empty results with
+ * scanError on failure, and skips (rather than fails on) individual surveys it cannot read.
+ */
+async function scanThemesInUse(client: LimeSurveyClient, scanLimit: number): Promise<{
+  themesInUse: string[];
+  inheritCount: number;
+  scannedSurveys: number;
+  totalSurveys: number;
+  scanError: string | null;
+}> {
+  try {
+    const surveysValue = await client.call("list_surveys", [null, null]);
+    const surveys = Array.isArray(surveysValue) ? surveysValue : [];
+    const totalSurveys = surveys.length;
+    const scanned = surveys.slice(0, scanLimit);
+    const templates = new Set<string>();
+    let inheritCount = 0;
+    for (const survey of scanned) {
+      const object = objectValue(survey);
+      const sidValue = object ? object.sid ?? object.survey_id : undefined;
+      const sid = typeof sidValue === "number" ? sidValue : typeof sidValue === "string" ? Number(sidValue) : NaN;
+      if (!Number.isFinite(sid)) continue;
+      try {
+        const properties = await client.call("get_survey_properties", [sid, ["template"]]);
+        const propsObject = objectValue(properties);
+        const template = propsObject && typeof propsObject.template === "string" ? propsObject.template : undefined;
+        if (!template) continue;
+        if (template === "inherit") inheritCount += 1;
+        else templates.add(template);
+      } catch {
+        // One survey's properties failing to read must not fail the whole scan.
+      }
+    }
+    return { themesInUse: [...templates], inheritCount, scannedSurveys: scanned.length, totalSurveys, scanError: null };
+  } catch (value) {
+    return {
+      themesInUse: [],
+      inheritCount: 0,
+      scannedSurveys: 0,
+      totalSurveys: 0,
+      scanError: value instanceof Error ? value.message : String(value),
+    };
+  }
+}
+
 export function registerThemeTools(server: McpServer, client: LimeSurveyClient, config: LimeSurveyConfig): void {
   const generateSchema = z.object({
     theme_name: themeNameSchema,
@@ -660,6 +732,42 @@ export function registerThemeTools(server: McpServer, client: LimeSurveyClient, 
         rpc_result: rpcResult,
         verification: "Preview the survey in LimeSurvey and call limesurvey_get_survey_properties for the template property.",
         rollback: "Assign the previous installed theme name with this same tool.",
+      };
+    }),
+  );
+
+  server.registerTool(
+    "limesurvey_list_installed_themes",
+    {
+      title: "List installed LimeSurvey themes (best effort)",
+      description: "LimeSurvey RemoteControl2 has no official method to enumerate installed survey themes "
+        + "(verified 2026-07-24 against api.limesurvey.org and the LimeSurvey source). This tool combines two "
+        + "best-effort signals instead: generated_packages lists ZIPs/folders already generated locally in "
+        + "LIMESURVEY_THEME_DIR, and themes_in_use lists the distinct template names actually assigned to surveys "
+        + "visible to this account (via list_surveys + get_survey_properties), which works without a superadmin "
+        + "account. Always includes the documented admin-UI fallback for the complete installed-theme list.",
+      inputSchema: z.object({
+        survey_scan_limit: z.number().int().min(1).max(100).default(25)
+          .describe("Maximum number of visible surveys to inspect for their assigned theme."),
+      }).strict(),
+      outputSchema,
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    },
+    async ({ survey_scan_limit }) => run(config, "list_installed_themes", false, async () => {
+      const local = await listGeneratedThemePackages(config.themeDir);
+      const remote = await scanThemesInUse(client, survey_scan_limit);
+      return {
+        generated_packages: local.packages,
+        generated_packages_note: local.note,
+        themes_in_use: remote.themesInUse,
+        inherit_count: remote.inheritCount,
+        scanned_surveys: remote.scannedSurveys,
+        total_surveys: remote.totalSurveys,
+        ...(remote.scanError ? { themes_in_use_error: remote.scanError } : {}),
+        limitations: "The LimeSurvey RemoteControl API cannot enumerate installed themes; themes_in_use only "
+          + "covers templates referenced by surveys visible to this account.",
+        admin_fallback: "Admin UI: Configuration > Themes; or read the name from the survey admin URL segment "
+          + "templatename/<name>.",
       };
     }),
   );
