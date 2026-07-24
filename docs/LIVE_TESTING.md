@@ -1,6 +1,6 @@
 # Live Integration Testing
 
-The live integration runner exercises all 68 MCP tools against a dedicated
+The live integration runner exercises all 71 MCP tools against a dedicated
 LimeSurvey test instance. It is intentionally separate from `npm test`, which
 uses mocked JSON-RPC responses and is safe for CI.
 
@@ -66,7 +66,7 @@ npm run test:live
 
 Success requires:
 
-- `unique_tools_exercised` equals `68`;
+- `unique_tools_exercised` equals `71`;
 - `failed` equals `0`;
 - `untested_tools` equals `0`.
 

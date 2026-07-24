@@ -1,9 +1,11 @@
 import { createHash, randomUUID } from "node:crypto";
-import { chmod, mkdir, writeFile } from "node:fs/promises";
+import { access, chmod, mkdir, writeFile } from "node:fs/promises";
+import { constants as fsConstants } from "node:fs";
 import path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { LimeSurveyClient } from "./client.js";
+import { SERVER_VERSION } from "./server.js";
 import { buildRpcParams, jsonValueSchema, toolDefinitions } from "./tool-definitions.js";
 import { LimeSurveyError, type JsonValue, type LimeSurveyConfig } from "./types.js";
 
@@ -30,6 +32,7 @@ function error(workflow: string, value: unknown): WorkflowResult {
     status: "error",
     message: value instanceof Error ? value.message : String(value),
     ...(value instanceof LimeSurveyError && value.code ? { code: value.code } : {}),
+    ...(value instanceof LimeSurveyError && value.details !== undefined ? { details: value.details } : {}),
   };
   return { ...text(workflow, result), isError: true };
 }
@@ -63,6 +66,43 @@ function findDefinition(method: string) {
   const definition = toolDefinitions.find((item) => item.method === method);
   if (!definition) throw new LimeSurveyError(`Internal tool definition for ${method} was not found.`);
   return definition;
+}
+
+/**
+ * Reads one global LimeSurvey setting for get_instance_info/list_installed_themes, tolerating
+ * permission failures (get_site_settings requires a superadmin account for most fields).
+ */
+async function bestEffortSiteSetting(client: LimeSurveyClient, settingName: string): Promise<string | null> {
+  try {
+    const value = await client.call("get_site_settings", [settingName]);
+    if (typeof value === "string" && value.length > 0) return value;
+    if (typeof value === "number") return String(value);
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/** Local filesystem check for get_instance_info's directories field. No RemoteControl call involved. */
+async function directoryInfo(configuredPath: string | undefined): Promise<JsonValue> {
+  if (!configuredPath) return { configured: false, exists: false, writable: false };
+  let exists = false;
+  try {
+    await access(configuredPath, fsConstants.F_OK);
+    exists = true;
+  } catch {
+    exists = false;
+  }
+  let writable = false;
+  if (exists) {
+    try {
+      await access(configuredPath, fsConstants.W_OK);
+      writable = true;
+    } catch {
+      writable = false;
+    }
+  }
+  return { configured: true, path: configuredPath, exists, writable };
 }
 
 function decodeBase64(value: JsonValue, maxBytes: number): Buffer {
@@ -101,7 +141,8 @@ async function saveExport(
 ): Promise<JsonValue> {
   if (!config.exportDir) {
     throw new LimeSurveyError(
-      "LIMESURVEY_EXPORT_DIR is not configured. Set it to a dedicated writable directory before using file export tools.",
+      "LIMESURVEY_EXPORT_DIR is not configured. Set it to a dedicated writable directory before using file export "
+        + "tools, then fully restart the MCP client process; reconnecting alone does not reload environment variables.",
     );
   }
   const extension = documentType.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -351,6 +392,140 @@ export function registerWorkflowTools(
     async (input) => run(config, "export_statistics_to_file", true, async () => {
       const definition = findDefinition("export_statistics");
       const data = await client.call("export_statistics", buildRpcParams(definition, input));
+      return saveExport(config, data, input.document_type, input.file_name, input.overwrite, input.confirm_overwrite);
+    }),
+  );
+
+  server.registerTool(
+    "limesurvey_get_instance_info",
+    {
+      title: "Get MCP server and LimeSurvey capability info",
+      description: "Report server-side configuration without any RemoteControl call by default: server_version, "
+        + "instance_host, transport, read_only, experimental_methods_enabled, configured export/import/theme "
+        + "directories (each with a local exists/writable check), and a capabilities summary. Set "
+        + "probe_instance=true to additionally call list_surveys (connectivity/auth proof, count only) and "
+        + "get_site_settings(\"versionnumber\") — the latter requires a superadmin service account and degrades to "
+        + "permission_level=\"standard\" with instance_version=null otherwise. Call this before relying on file "
+        + "export/import or theming tools.",
+      inputSchema: z.object({
+        probe_instance: z.boolean().default(false)
+          .describe("Also call list_surveys and get_site_settings to probe live connectivity, auth, and version/permission level."),
+      }).strict(),
+      outputSchema,
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    },
+    async ({ probe_instance }) => run(config, "get_instance_info", false, async () => {
+      const [exportDir, importDir, themeDir] = await Promise.all([
+        directoryInfo(config.exportDir),
+        directoryInfo(config.importDir),
+        directoryInfo(config.themeDir),
+      ]);
+      const base: Record<string, JsonValue> = {
+        server_version: SERVER_VERSION,
+        instance_host: config.url.host,
+        transport: config.transport ?? "stdio",
+        read_only: config.readOnly ?? false,
+        experimental_methods_enabled: config.enableExperimentalMethods ?? false,
+        directories: { export_dir: exportDir, import_dir: importDir, theme_dir: themeDir },
+        capabilities: {
+          import_via_path: true,
+          export_survey_to_file: config.enableExperimentalMethods ?? false,
+          list_installed_themes: true,
+          theme_generation: Boolean(config.themeDir),
+        },
+        restart_hint: "Environment changes require a full Claude Code restart; reconnecting the MCP server does "
+          + "not reload environment variables.",
+      };
+      if (!probe_instance) return base;
+
+      let surveyCount: JsonValue = null;
+      try {
+        const surveys = await client.call("list_surveys", [null, null]);
+        surveyCount = Array.isArray(surveys) ? surveys.length : null;
+      } catch {
+        surveyCount = null;
+      }
+
+      const versionNote = "LimeSurvey exposes the version only to superadmins via RemoteControl; read it from the "
+        + "admin UI footer instead.";
+      let instanceVersion: JsonValue = null;
+      let permissionLevel: JsonValue = "standard";
+      let includeVersionNote = false;
+      try {
+        const value = await client.call("get_site_settings", ["versionnumber"]);
+        if (typeof value === "string" && value.length > 0) {
+          instanceVersion = value;
+          permissionLevel = "superadmin";
+        } else if (typeof value === "number") {
+          instanceVersion = String(value);
+          permissionLevel = "superadmin";
+        } else {
+          includeVersionNote = true;
+        }
+      } catch {
+        includeVersionNote = true;
+      }
+
+      const defaultTheme = await bestEffortSiteSetting(client, "defaulttemplate");
+
+      return {
+        ...base,
+        survey_count: surveyCount,
+        instance_version: instanceVersion,
+        permission_level: permissionLevel,
+        default_theme: defaultTheme,
+        ...(includeVersionNote ? { version_note: versionNote } : {}),
+      };
+    }),
+  );
+
+  server.registerTool(
+    "limesurvey_export_survey_to_file",
+    {
+      title: "Export survey structure to a file (experimental)",
+      description: "Attempt to export a survey's structure as .lss and write it inside LIMESURVEY_EXPORT_DIR, "
+        + "returning a path instead of base64. Core LimeSurvey RemoteControl2 has no export_survey method "
+        + "(verified 2026-07-24 against api.limesurvey.org and the LimeSurvey source); this tool only works if a "
+        + "custom plugin exposes an equivalent RPC method, so it requires LIMESURVEY_ENABLE_EXPERIMENTAL_METHODS="
+        + "true and otherwise always fails with a clear EXPORT_UNSUPPORTED error. Prefer property-based "
+        + "verification (list_groups, list_questions, get_survey_properties, get_group_properties, "
+        + "get_question_properties) over round-trip diffing.",
+      inputSchema: z.object({
+        survey_id: surveyId,
+        document_type: z.literal("lss").default("lss").describe("Structure export format."),
+        ...exportFileFields,
+      }).strict(),
+      outputSchema,
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    },
+    async (input) => run(config, "export_survey_to_file", true, async () => {
+      if (!config.enableExperimentalMethods) {
+        throw new LimeSurveyError(
+          "Core LimeSurvey RemoteControl2 has no export_survey method.",
+          "EXPORT_UNSUPPORTED",
+          {
+            recovery: "Verify the survey via list_groups, list_questions, and "
+              + "get_survey_properties/get_group_properties/get_question_properties (property-based verification). "
+              + "Only if the instance has an extension providing export_survey, set "
+              + "LIMESURVEY_ENABLE_EXPERIMENTAL_METHODS=true.",
+          },
+        );
+      }
+      let data: JsonValue;
+      try {
+        data = await client.call("export_survey", [input.survey_id]);
+      } catch (value) {
+        throw new LimeSurveyError(
+          "This LimeSurvey instance does not support structural survey export via RemoteControl2.",
+          "EXPORT_UNSUPPORTED",
+          {
+            recovery: "Verify the survey via list_groups, list_questions, and "
+              + "get_survey_properties/get_group_properties/get_question_properties (property-based verification), "
+              + "or export manually via the LimeSurvey admin UI (Display/Export > Survey structure (.lss)).",
+            cause: value instanceof Error ? value.message : String(value),
+          },
+        );
+      }
       return saveExport(config, data, input.document_type, input.file_name, input.overwrite, input.confirm_overwrite);
     }),
   );

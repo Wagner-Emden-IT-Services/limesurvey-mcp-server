@@ -8,15 +8,16 @@
 
 A production-oriented [Model Context Protocol](https://modelcontextprotocol.io/)
 server for the [LimeSurvey RemoteControl 2 API](https://www.limesurvey.org/manual/RemoteControl_2_API).
-It exposes all 56 documented RemoteControl methods plus 12 guarded workflow tools
-for discovery, participants, exports, and responsive survey themes.
+It exposes all 56 documented RemoteControl methods plus 15 guarded workflow tools
+for discovery, participants, exports, capability detection, and responsive
+survey themes.
 
 This community project is not affiliated with or endorsed by LimeSurvey GmbH.
 
 ## Features
 
 - **Complete RemoteControl coverage:** all 56 documented JSON-RPC methods
-- **68 MCP tools:** official methods plus focused workflow and theme tools
+- **71 MCP tools:** official methods plus focused workflow and theme tools
 - **Modern MCP contracts:** strict Zod schemas, structured output, and annotations
 - **Safe write access:** server-enforced read-only mode and explicit confirmations
 - **Session management:** cached credentials, one retry after an invalid session,
@@ -31,9 +32,9 @@ This community project is not affiliated with or endorsed by LimeSurvey GmbH.
 | Area | Tools | Count |
 |---|---|---:|
 | Official RemoteControl 2 API | Sessions, settings, surveys, languages, groups, questions, participants, quotas, users, responses, files, exports | 56 |
-| Workflow helpers | Survey search, language normalization, participant helpers, export format discovery, secure file exports | 8 |
-| Survey themes | Generate, validate, publication guide, assign to survey | 4 |
-| **Total** | | **68** |
+| Workflow helpers | Survey search, language normalization, participant helpers, export format discovery, secure file exports, experimental survey-structure export, capability/instance info | 10 |
+| Survey themes | Generate, validate, publication guide, assign to survey, best-effort theme listing | 5 |
+| **Total** | | **71** |
 
 Official tools are named `limesurvey_<remotecontrol_method>`. Run the MCP
 Inspector to view every current schema:
@@ -55,7 +56,7 @@ npm run inspect
 ### Option A: npm
 
 ```bash
-npx -y limesurvey-mcp-server@1.2.2
+npx -y limesurvey-mcp-server@1.3.0
 ```
 
 The server uses stdio by default. Supply credentials through the MCP client
@@ -107,6 +108,8 @@ Important optional variables:
 | `LIMESURVEY_MAX_RESPONSE_CHARS` | `50000` | Maximum inline result size |
 | `LIMESURVEY_EXPORT_DIR` | unset | Dedicated output directory for decoded exports |
 | `LIMESURVEY_MAX_EXPORT_BYTES` | `104857600` | Maximum decoded export size |
+| `LIMESURVEY_IMPORT_DIR` | unset (falls back to `LIMESURVEY_EXPORT_DIR`) | Dedicated input directory for `import_data_path` reads |
+| `LIMESURVEY_MAX_IMPORT_BYTES` | `52428800` | Maximum file size accepted via `import_data_path` |
 | `LIMESURVEY_THEME_DIR` | unset | Dedicated output directory for generated theme ZIPs |
 | `LIMESURVEY_MAX_THEME_ASSET_BYTES` | `5242880` | Maximum logo and theme entry size |
 | `LIMESURVEY_ENABLE_EXPERIMENTAL_METHODS` | `false` | Enable non-standard `list_response_exports` |
@@ -131,7 +134,7 @@ codex mcp add limesurvey `
   --env "LIMESURVEY_USERNAME=rpc-user" `
   --env "LIMESURVEY_PASSWORD=replace-me" `
   --env "LIMESURVEY_READ_ONLY=true" `
-  -- npx -y limesurvey-mcp-server@1.2.2
+  -- npx -y limesurvey-mcp-server@1.3.0
 ```
 
 Example for clients that support `mcpServers` configuration:
@@ -141,7 +144,7 @@ Example for clients that support `mcpServers` configuration:
   "mcpServers": {
     "limesurvey": {
       "command": "npx",
-      "args": ["-y", "limesurvey-mcp-server@1.2.2"],
+      "args": ["-y", "limesurvey-mcp-server@1.3.0"],
       "env": {
         "LIMESURVEY_URL": "https://survey.example.com/index.php/admin/remotecontrol",
         "LIMESURVEY_USERNAME": "rpc-user",
@@ -198,13 +201,16 @@ These MCP-only confirmation fields are never forwarded to LimeSurvey.
 ## Responsive Survey Themes
 
 The theme generator was verified on **2026-07-22** against the current
-**LimeSurvey CE 7.0.5** release and the official Bootstrap 5
-`fruity_twentythree` manifest. LimeSurvey 7 is the default target; LimeSurvey 6
-can be selected explicitly.
+**LimeSurvey CE 7.0.5** release, and on **2026-07-24** against the official
+**vanilla 3.0.1** ("Bootstrap Vanilla") manifest. LimeSurvey 7 is the default
+target; LimeSurvey 6 can be selected explicitly.
 
 Generated themes:
 
-- inherit the installed `fruity_twentythree` core theme instead of copying it;
+- inherit the installed `vanilla` core theme instead of copying it — `vanilla`
+  is the minimal official base theme shipped and installed with every
+  LimeSurvey instance, so generated themes no longer depend on
+  `fruity_twentythree` being present;
 - contain responsive CSS, fixed mobile breakpoints, print styles, visible focus,
   reduced-motion support, and minimum 44 px controls;
 - validate WCAG contrast for body, muted, focus, and primary-button colors;
@@ -236,11 +242,75 @@ The original RemoteControl export methods remain available for compatibility.
 Oversized inline responses are replaced by a marked preview that is not a valid
 export file.
 
+## Secure File Imports
+
+`limesurvey_import_survey`, `limesurvey_import_group`, and
+`limesurvey_import_question` accept an `import_data_path` argument as an
+alternative to inline `import_data`. Set exactly one of the two; the server
+reads the file at `import_data_path` from `LIMESURVEY_IMPORT_DIR` (falling
+back to `LIMESURVEY_EXPORT_DIR` when unset) and base64-encodes it itself, so a
+survey file of any size can be imported with a single tool call instead of an
+inline base64 payload. Use `import_data_path` for files at or above roughly
+50 KB; reserve inline `import_data` for small files under 200,000 characters
+of base64 text.
+
+The path is resolved and checked the same way as export file names: it must
+stay inside the configured import directory. Oversized files, missing files,
+paths outside the directory, and conflicting/missing parameters all fail with
+a distinct error `code` (`IMPORT_FILE_TOO_LARGE`, `IMPORT_FILE_NOT_FOUND`,
+`IMPORT_PATH_OUTSIDE_DIR`, `IMPORT_PARAM_CONFLICT`,
+`IMPORT_PAYLOAD_TOO_LARGE`, `IMPORT_DIR_NOT_CONFIGURED`) plus a `recovery`
+hint. Changing `LIMESURVEY_IMPORT_DIR` or `LIMESURVEY_MAX_IMPORT_BYTES`
+requires a full restart of the MCP client process; reconnecting alone does not
+reload environment variables.
+
+`import_survey` returns the survey ID LimeSurvey actually used: it keeps the
+ID embedded in the file when that ID is free, `destination_survey_id`
+overrides it when set, and on an ID collision LimeSurvey silently assigns a
+random 6-digit `sid` instead of failing.
+
+## Capability Detection
+
+The server prints a startup preflight to stderr for every optional directory
+(`LIMESURVEY_EXPORT_DIR`/`LIMESURVEY_IMPORT_DIR`/`LIMESURVEY_THEME_DIR`) that
+is not configured, naming the tools that stay disabled until it is set and
+that changing it requires a full restart.
+
+`limesurvey_get_instance_info` makes **no RemoteControl call** by default: it
+reports `server_version`, `instance_host` (host only, never credentials),
+`transport`, `read_only`, `experimental_methods_enabled`, per-directory
+`{configured, path, exists, writable}` checks, and a `capabilities` summary.
+Set `probe_instance=true` to additionally call `list_surveys` (connectivity/
+auth proof, count only) and `get_site_settings("versionnumber")`, which
+requires a superadmin service account and degrades to
+`permission_level: "standard"` with `instance_version: null` otherwise. Call
+this before relying on file export/import or theming tools.
+
+`limesurvey_list_installed_themes` combines two best-effort signals, since
+RemoteControl2 has no official method to enumerate installed themes:
+`generated_packages` lists ZIPs/folders already generated locally in
+`LIMESURVEY_THEME_DIR`, and `themes_in_use` lists the distinct `template`
+values actually assigned to up to `survey_scan_limit` visible surveys (via
+`list_surveys` + `get_survey_properties`), which works without a superadmin
+account — `"inherit"` is tracked separately as `inherit_count`, not as a
+theme. The response always includes the documented admin-UI fallback
+(Configuration > Themes) for the complete list.
+
 ## Experimental Extension
 
 `list_response_exports` is not part of the official RemoteControl method list.
 Its workflow tool is disabled unless the matching LimeSurvey extension is
 installed and `LIMESURVEY_ENABLE_EXPERIMENTAL_METHODS=true` is set.
+
+`limesurvey_export_survey_to_file` is likewise experimental: core LimeSurvey
+RemoteControl2 has no `export_survey` method at all (verified 2026-07-24
+against api.limesurvey.org and the LimeSurvey source). The tool requires
+`LIMESURVEY_ENABLE_EXPERIMENTAL_METHODS=true` and only succeeds if a custom
+LimeSurvey plugin provides an equivalent method; otherwise it always fails
+with a structured `EXPORT_UNSUPPORTED` error. Prefer property-based
+verification (`list_groups`, `list_questions`, `get_survey_properties`,
+`get_group_properties`, `get_question_properties`) over round-trip diffing
+against this tool.
 
 ## Development
 
@@ -251,18 +321,23 @@ npm run inspect
 npm pack --dry-run
 ```
 
-The 17 automated tests use mocked LimeSurvey JSON-RPC responses and cover:
+The 39 automated tests use mocked LimeSurvey JSON-RPC responses and cover:
 
 - JSON-RPC 1.0 ordering, session reuse, renewal, and secret handling
 - MCP handshake, schemas, annotations, confirmations, and read-only enforcement
 - Streamable HTTP bearer authentication and session isolation
 - workflow filtering and secure export files
 - survey theme ZIP generation, validation, publication guidance, and assignment
+- secure file imports via `import_data_path` for survey, group, and question tools
+- environment preflight warnings (`envPreflightWarnings`)
+- capability detection (`get_instance_info` with and without `probe_instance`,
+  `list_installed_themes`) and the experimental, permission-degrading
+  `export_survey_to_file` tool
 
 No live LimeSurvey credentials are required. Content evaluations must be created
 against a stable test instance; see [evaluations/README.md](evaluations/README.md).
 
-An opt-in live integration runner exercises all 68 tools against disposable,
+An opt-in live integration runner exercises all 71 tools against disposable,
 prefixed test records:
 
 ```bash
@@ -296,8 +371,8 @@ docs/                   detailed operational documentation
 
 - Node.js 20, 22, and 24 are tested in CI.
 - RemoteControl uses JSON-RPC 1.0 positional parameters as required by LimeSurvey.
-- Theme generation supports LimeSurvey 7.x and 6.x with
-  `fruity_twentythree`; always validate against the exact installed patch release.
+- Theme generation supports LimeSurvey 7.x and 6.x with `vanilla`; always
+  validate against the exact installed patch release.
 - LimeSurvey Cloud may restrict custom theme import by account or plan. The MCP
   server does not attempt unsupported filesystem installation.
 
@@ -318,7 +393,7 @@ Copyright (c) 2026 Wagner-Emden IT Services.
 
 Survey theme ZIPs generated by the server are separately marked and licensed
 under **GPL-2.0-or-later** because they are designed to inherit LimeSurvey's GPL
-`fruity_twentythree` theme. Customer logos and other supplied assets retain their
+`vanilla` theme. Customer logos and other supplied assets retain their
 own applicable rights and must not be redistributed without permission.
 
 ## References

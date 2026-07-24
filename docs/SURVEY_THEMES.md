@@ -2,9 +2,13 @@
 
 ## Supported baseline
 
-The implementation was verified on July 22, 2026 against LimeSurvey CE 7.0.5
-and the current `fruity_twentythree` manifest. The core theme uses Bootstrap 5
-in LimeSurvey 6 and 7 and declares compatibility with both major versions.
+The implementation was verified on July 22, 2026 against LimeSurvey CE 7.0.5,
+and on July 24, 2026 against the official `vanilla` 3.0.1 ("Bootstrap Vanilla")
+manifest, the minimal official base theme shipped and installed with every
+LimeSurvey instance. Generated themes extend `vanilla` instead of
+`fruity_twentythree` so they no longer depend on `fruity_twentythree` being
+installed. The core theme uses Bootstrap 5 in LimeSurvey 6 and 7 and declares
+compatibility with both major versions.
 
 LimeSurvey publishes frequent patch releases. Before every installation, compare
 the version shown in the lower-right corner of the administration interface with:
@@ -59,7 +63,7 @@ base64 PNG or JPEG. SVG and JavaScript are intentionally rejected because
 LimeSurvey treats theme imports as an XSS-sensitive administrator capability.
 
 Generated themes are freely usable under GPL-2.0-or-later. This license is
-deliberate because the theme inherits the GPL-licensed `fruity_twentythree`.
+deliberate because the theme inherits the GPL-licensed `vanilla`.
 
 ## Validate before import
 
@@ -104,7 +108,7 @@ conditions, acceptance checks, Cloud guidance, and rollback steps. Set
 2. Open **Configuration > Advanced > Themes**.
 3. Select **Survey themes** and start **Import**.
 4. Choose the validated ZIP from `LIMESURVEY_THEME_DIR`.
-5. Confirm that `fruity_twentythree` is recognized as the installed parent theme.
+5. Confirm that `vanilla` is recognized as the installed parent theme.
 6. Preview welcome, question, completion, token, error, print-answer, and
    public-statistics screens in the Theme Editor.
 

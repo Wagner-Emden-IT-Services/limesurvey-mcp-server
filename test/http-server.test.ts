@@ -40,7 +40,7 @@ test("protects Streamable HTTP with bearer auth and completes an MCP handshake",
   try {
     await client.connect(transport as unknown as Transport);
     const tools = await client.listTools();
-    assert.equal(tools.tools.length, 68);
+    assert.equal(tools.tools.length, 71);
     const result = await client.callTool({ name: "limesurvey_list_surveys", arguments: {} });
     assert.equal(result.isError, undefined);
   } finally {
