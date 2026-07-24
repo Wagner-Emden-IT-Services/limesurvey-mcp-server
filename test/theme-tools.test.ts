@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -45,7 +45,7 @@ test("generates and validates a responsive LimeSurvey 7 theme package", async ()
       result: { file_name: string; license: string; parent_theme: string };
     };
     assert.equal(generatedContent.result.license, "GPL-2.0-or-later");
-    assert.equal(generatedContent.result.parent_theme, "fruity_twentythree");
+    assert.equal(generatedContent.result.parent_theme, "vanilla");
 
     const archivePath = path.join(themeDir, generatedContent.result.file_name);
     const zip = await JSZip.loadAsync(await readFile(archivePath));
@@ -56,7 +56,7 @@ test("generates and validates a responsive LimeSurvey 7 theme package", async ()
     const manifest = await zip.file("config.xml")?.async("string");
     const css = await zip.file("css/mcp-theme.css")?.async("string");
     const license = await zip.file("LICENSE.txt")?.async("string");
-    assert.match(manifest ?? "", /<extends>fruity_twentythree<\/extends>/);
+    assert.match(manifest ?? "", /<extends>vanilla<\/extends>/);
     assert.match(manifest ?? "", /<version>7\.0<\/version>/);
     assert.match(css ?? "", /@media \(max-width: 575\.98px\)/);
     assert.match(css ?? "", /prefers-reduced-motion/);
@@ -70,6 +70,58 @@ test("generates and validates a responsive LimeSurvey 7 theme package", async ()
     const validationContent = validated.structuredContent as { result: { valid: boolean; errors: string[] } };
     assert.equal(validationContent.result.valid, true);
     assert.deepEqual(validationContent.result.errors, []);
+  } finally {
+    await mcpClient.close();
+    await server.close();
+    await rm(themeDir, { recursive: true, force: true });
+  }
+});
+
+test("rejects a theme package that extends fruity_twentythree instead of vanilla", async () => {
+  const themeDir = await mkdtemp(path.join(os.tmpdir(), "limesurvey-mcp-theme-parent-"));
+  const { server, mcpClient } = await connected({ ...baseConfig, themeDir });
+  try {
+    const legacyManifest = `<?xml version="1.0" encoding="UTF-8"?>
+<config>
+  <metadata>
+    <name>legacy_parent</name>
+    <title>Legacy Parent</title>
+    <type>theme</type>
+    <author>Test Author</author>
+    <license>GNU General Public License version 2 or later</license>
+    <version>1.0.0</version>
+    <description>Theme package still declaring the old parent theme.</description>
+  <extends>fruity_twentythree</extends>
+  </metadata>
+  <compatibility>
+    <version>7.0</version>
+  </compatibility>
+  <files>
+    <css>
+      <add>css/mcp-theme.css</add>
+    </css>
+  </files>
+</config>
+`;
+    const zip = new JSZip();
+    zip.file("config.xml", legacyManifest);
+    zip.file(
+      "css/mcp-theme.css",
+      "@media (max-width: 575.98px) { body { color: red; } }\n:focus-visible { outline: none; }\n/* prefers-reduced-motion */\n",
+    );
+    zip.file("LICENSE.txt", "GNU General Public License version 2 or later\n");
+    const archive = await zip.generateAsync({ type: "nodebuffer" });
+    const fileName = "legacy_parent-1.0.0-ls7.zip";
+    await writeFile(path.join(themeDir, fileName), archive, { mode: 0o600 });
+
+    const validated = await mcpClient.callTool({
+      name: "limesurvey_validate_survey_theme",
+      arguments: { file_name: fileName },
+    });
+    assert.equal(validated.isError, undefined);
+    const validationContent = validated.structuredContent as { result: { valid: boolean; errors: string[] } };
+    assert.equal(validationContent.result.valid, false);
+    assert.ok(validationContent.result.errors.some((error) => error === "Manifest must extend vanilla."));
   } finally {
     await mcpClient.close();
     await server.close();
