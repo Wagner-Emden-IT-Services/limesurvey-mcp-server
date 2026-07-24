@@ -32,8 +32,8 @@ This community project is not affiliated with or endorsed by LimeSurvey GmbH.
 | Area | Tools | Count |
 |---|---|---:|
 | Official RemoteControl 2 API | Sessions, settings, surveys, languages, groups, questions, participants, quotas, users, responses, files, exports | 56 |
-| Workflow helpers | Survey search, language normalization, participant helpers, export format discovery, secure file exports, experimental survey-structure export, capability/instance info, best-effort theme listing | 11 |
-| Survey themes | Generate, validate, publication guide, assign to survey | 4 |
+| Workflow helpers | Survey search, language normalization, participant helpers, export format discovery, secure file exports, experimental survey-structure export, capability/instance info | 10 |
+| Survey themes | Generate, validate, publication guide, assign to survey, best-effort theme listing | 5 |
 | **Total** | | **71** |
 
 Official tools are named `limesurvey_<remotecontrol_method>`. Run the MCP
@@ -268,20 +268,30 @@ random 6-digit `sid` instead of failing.
 
 ## Capability Detection
 
-`limesurvey_get_instance_info` reports read-only mode, the
-experimental-methods flag, which of `LIMESURVEY_EXPORT_DIR`/
-`LIMESURVEY_IMPORT_DIR`/`LIMESURVEY_THEME_DIR` are configured, and best-effort
-LimeSurvey version/database version/default theme via `get_site_settings`.
-Each LimeSurvey-side field degrades independently to `null` with a
-`permission_note` when the service account is not a superadmin, instead of
-failing the whole call. Call this before relying on file export/import or
-theming tools.
+The server prints a startup preflight to stderr for every optional directory
+(`LIMESURVEY_EXPORT_DIR`/`LIMESURVEY_IMPORT_DIR`/`LIMESURVEY_THEME_DIR`) that
+is not configured, naming the tools that stay disabled until it is set and
+that changing it requires a full restart.
 
-`limesurvey_list_installed_themes` best-effort reports the current default
-theme the same way. LimeSurvey RemoteControl2 has no official method to
-enumerate installed themes, so the response always includes the documented
-admin-UI fallback (Configuration > Advanced > Themes > Survey themes) for the
-complete list.
+`limesurvey_get_instance_info` makes **no RemoteControl call** by default: it
+reports `server_version`, `instance_host` (host only, never credentials),
+`transport`, `read_only`, `experimental_methods_enabled`, per-directory
+`{configured, path, exists, writable}` checks, and a `capabilities` summary.
+Set `probe_instance=true` to additionally call `list_surveys` (connectivity/
+auth proof, count only) and `get_site_settings("versionnumber")`, which
+requires a superadmin service account and degrades to
+`permission_level: "standard"` with `instance_version: null` otherwise. Call
+this before relying on file export/import or theming tools.
+
+`limesurvey_list_installed_themes` combines two best-effort signals, since
+RemoteControl2 has no official method to enumerate installed themes:
+`generated_packages` lists ZIPs/folders already generated locally in
+`LIMESURVEY_THEME_DIR`, and `themes_in_use` lists the distinct `template`
+values actually assigned to up to `survey_scan_limit` visible surveys (via
+`list_surveys` + `get_survey_properties`), which works without a superadmin
+account — `"inherit"` is tracked separately as `inherit_count`, not as a
+theme. The response always includes the documented admin-UI fallback
+(Configuration > Themes) for the complete list.
 
 ## Experimental Extension
 
@@ -289,15 +299,15 @@ complete list.
 Its workflow tool is disabled unless the matching LimeSurvey extension is
 installed and `LIMESURVEY_ENABLE_EXPERIMENTAL_METHODS=true` is set.
 
-`export_survey` is likewise not part of the official RemoteControl method list
-(verified 2026-07-24 against api.limesurvey.org and the LimeSurvey source) —
-RemoteControl2 has no method to export a survey's structure at all. Its
-workflow tool requires `LIMESURVEY_ENABLE_EXPERIMENTAL_METHODS=true` and only
-succeeds if a custom LimeSurvey plugin provides an equivalent method;
-otherwise it always fails with a structured `EXPORT_UNSUPPORTED` error.
-Prefer property-based verification (`list_groups`, `list_questions`,
-`get_survey_properties`, `get_group_properties`, `get_question_properties`)
-over round-trip diffing against this tool.
+`limesurvey_export_survey_to_file` is likewise experimental: core LimeSurvey
+RemoteControl2 has no `export_survey` method at all (verified 2026-07-24
+against api.limesurvey.org and the LimeSurvey source). The tool requires
+`LIMESURVEY_ENABLE_EXPERIMENTAL_METHODS=true` and only succeeds if a custom
+LimeSurvey plugin provides an equivalent method; otherwise it always fails
+with a structured `EXPORT_UNSUPPORTED` error. Prefer property-based
+verification (`list_groups`, `list_questions`, `get_survey_properties`,
+`get_group_properties`, `get_question_properties`) over round-trip diffing
+against this tool.
 
 ## Development
 
@@ -308,7 +318,7 @@ npm run inspect
 npm pack --dry-run
 ```
 
-The 34 automated tests use mocked LimeSurvey JSON-RPC responses and cover:
+The 38 automated tests use mocked LimeSurvey JSON-RPC responses and cover:
 
 - JSON-RPC 1.0 ordering, session reuse, renewal, and secret handling
 - MCP handshake, schemas, annotations, confirmations, and read-only enforcement
@@ -316,8 +326,10 @@ The 34 automated tests use mocked LimeSurvey JSON-RPC responses and cover:
 - workflow filtering and secure export files
 - survey theme ZIP generation, validation, publication guidance, and assignment
 - secure file imports via `import_data_path` for survey, group, and question tools
-- capability detection (`get_instance_info`, `list_installed_themes`) and the
-  experimental, permission-degrading `export_survey` tool
+- environment preflight warnings (`envPreflightWarnings`)
+- capability detection (`get_instance_info` with and without `probe_instance`,
+  `list_installed_themes`) and the experimental, permission-degrading
+  `export_survey_to_file` tool
 
 No live LimeSurvey credentials are required. Content evaluations must be created
 against a stable test instance; see [evaluations/README.md](evaluations/README.md).
