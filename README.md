@@ -56,7 +56,7 @@ npm run inspect
 ### Option A: npm
 
 ```bash
-npx -y limesurvey-mcp-server@1.2.2
+npx -y limesurvey-mcp-server@1.3.0
 ```
 
 The server uses stdio by default. Supply credentials through the MCP client
@@ -134,7 +134,7 @@ codex mcp add limesurvey `
   --env "LIMESURVEY_USERNAME=rpc-user" `
   --env "LIMESURVEY_PASSWORD=replace-me" `
   --env "LIMESURVEY_READ_ONLY=true" `
-  -- npx -y limesurvey-mcp-server@1.2.2
+  -- npx -y limesurvey-mcp-server@1.3.0
 ```
 
 Example for clients that support `mcpServers` configuration:
@@ -144,7 +144,7 @@ Example for clients that support `mcpServers` configuration:
   "mcpServers": {
     "limesurvey": {
       "command": "npx",
-      "args": ["-y", "limesurvey-mcp-server@1.2.2"],
+      "args": ["-y", "limesurvey-mcp-server@1.3.0"],
       "env": {
         "LIMESURVEY_URL": "https://survey.example.com/index.php/admin/remotecontrol",
         "LIMESURVEY_USERNAME": "rpc-user",
@@ -321,7 +321,7 @@ npm run inspect
 npm pack --dry-run
 ```
 
-The 38 automated tests use mocked LimeSurvey JSON-RPC responses and cover:
+The 39 automated tests use mocked LimeSurvey JSON-RPC responses and cover:
 
 - JSON-RPC 1.0 ordering, session reuse, renewal, and secret handling
 - MCP handshake, schemas, annotations, confirmations, and read-only enforcement
