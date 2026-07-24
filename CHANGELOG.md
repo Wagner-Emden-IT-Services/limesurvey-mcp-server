@@ -60,6 +60,16 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - The `LIMESURVEY_EXPORT_DIR`/`LIMESURVEY_THEME_DIR` "not configured" errors
   now mention that changing the environment requires a full MCP client
   restart; reconnecting alone does not reload environment variables.
+- Generated survey themes now extend the official `vanilla` ("Bootstrap
+  Vanilla") base theme instead of `fruity_twentythree` (verified against the
+  vanilla 3.0.1 manifest, 2026-07-24). `vanilla` is the minimal official base
+  theme shipped and installed with every LimeSurvey instance and is explicitly
+  designed as the extension base for custom themes, so generated themes no
+  longer depend on `fruity_twentythree` being installed. **Breaking change for
+  re-generated themes:** packages produced before this change declared
+  `<extends>fruity_twentythree</extends>` and `limesurvey_validate_survey_theme`
+  now rejects that parent; regenerate any existing theme package with
+  `limesurvey_generate_survey_theme` before re-validating or re-importing it.
 
 ### Fixed
 
