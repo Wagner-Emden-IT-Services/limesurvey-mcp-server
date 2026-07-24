@@ -146,7 +146,7 @@ try {
   await attempt(mcpClient, "limesurvey_find_surveys", { query: prefix, limit: 20 });
   await attempt(mcpClient, "limesurvey_assign_survey_theme", {
     survey_id: primarySurveyId,
-    theme_name: "fruity_twentythree",
+    theme_name: "vanilla",
     confirm_theme_assignment: true,
   });
 
