@@ -1,4 +1,4 @@
-import { readFile, rm } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
@@ -169,9 +169,17 @@ try {
     copiedSurveyId = undefined;
   }
 
-  const surveyFixture = await fixture("docs/demosurveys/ls7_Samplesurvey_en_de.lss");
+  // The official sample survey is ~350 KB, far above the inline import guard,
+  // so this exercises the path-based import (RT-01) instead of inline base64.
+  const importDir = config.importDir ?? config.exportDir;
+  if (!importDir) throw new Error("LIMESURVEY_IMPORT_DIR or LIMESURVEY_EXPORT_DIR must be set for the path-based import step.");
+  await mkdir(importDir, { recursive: true });
+  const importFixtureName = `${prefix}-sample-survey.lss`;
+  const importFixturePath = path.join(importDir, importFixtureName);
+  await writeFile(importFixturePath, await readFile(path.join(fixtureRoot, "docs/demosurveys/ls7_Samplesurvey_en_de.lss")));
+  cleanup.push(() => rm(importFixturePath, { force: true }));
   const imported = await attempt(mcpClient, "limesurvey_import_survey", {
-    import_data: surveyFixture,
+    import_data_path: importFixtureName,
     import_data_type: "lss",
     new_survey_name: `${prefix} Imported`,
   });
@@ -492,7 +500,9 @@ try {
   await attempt(mcpClient, "limesurvey_set_participant_properties", {
     survey_id: primarySurveyId,
     query: { token: `${stamp}E` },
-    data: { sent: new Date(Date.now() - 86_400_000).toISOString().replace("T", " ").slice(0, 19) },
+    // LimeSurvey stores sent as "Y-m-d H:i" in a varchar(17) column; 19 chars
+    // fail hard under MariaDB strict mode instead of being truncated.
+    data: { sent: new Date(Date.now() - 86_400_000).toISOString().replace("T", " ").slice(0, 16) },
   });
   await attempt(mcpClient, "limesurvey_remind_participants", {
     survey_id: primarySurveyId,
