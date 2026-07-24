@@ -30,7 +30,7 @@ codex mcp add limesurvey `
   --env "LIMESURVEY_READ_ONLY=true" `
   --env "LIMESURVEY_EXPORT_DIR=C:/limesurvey-mcp/exports" `
   --env "LIMESURVEY_THEME_DIR=C:/limesurvey-mcp/themes" `
-  -- npx -y limesurvey-mcp-server@1.2.2
+  -- npx -y limesurvey-mcp-server@1.3.0
 ```
 
 The command stores the environment values in the Codex MCP configuration.
@@ -53,7 +53,7 @@ Clients that support the common `mcpServers` format can use:
   "mcpServers": {
     "limesurvey": {
       "command": "npx",
-      "args": ["-y", "limesurvey-mcp-server@1.2.2"],
+      "args": ["-y", "limesurvey-mcp-server@1.3.0"],
       "env": {
         "LIMESURVEY_URL": "https://survey.example.com/index.php/admin/remotecontrol",
         "LIMESURVEY_USERNAME": "rpc-user",
@@ -77,7 +77,7 @@ A global installation avoids an `npx` package lookup at every MCP process
 start:
 
 ```bash
-npm install --global limesurvey-mcp-server@1.2.2
+npm install --global limesurvey-mcp-server@1.3.0
 limesurvey-mcp
 ```
 
@@ -89,7 +89,7 @@ MCP client to run `limesurvey-mcp` and inject them there.
 ```bash
 git clone https://github.com/Wagner-Emden-IT-Services/limesurvey-mcp-server.git
 cd limesurvey-mcp-server
-git checkout v1.2.2
+git checkout v1.3.0
 npm ci
 npm test
 ```
@@ -102,7 +102,7 @@ Configure the MCP client to run Node.js with the absolute path to
 ```bash
 git clone https://github.com/Wagner-Emden-IT-Services/limesurvey-mcp-server.git
 cd limesurvey-mcp-server
-git checkout v1.2.2
+git checkout v1.3.0
 cp .env.example .env
 docker compose up --build -d
 ```
@@ -143,7 +143,7 @@ For a pinned `npx` installation, change the version in the MCP configuration
 and restart the client:
 
 ```text
-limesurvey-mcp-server@1.2.2
+limesurvey-mcp-server@1.3.0
 ```
 
 For a global installation:
@@ -156,7 +156,7 @@ For a source installation:
 
 ```bash
 git fetch --tags
-git checkout v1.2.2
+git checkout v1.3.0
 npm ci
 npm test
 ```
