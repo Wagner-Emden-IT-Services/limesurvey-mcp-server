@@ -107,6 +107,8 @@ Important optional variables:
 | `LIMESURVEY_MAX_RESPONSE_CHARS` | `50000` | Maximum inline result size |
 | `LIMESURVEY_EXPORT_DIR` | unset | Dedicated output directory for decoded exports |
 | `LIMESURVEY_MAX_EXPORT_BYTES` | `104857600` | Maximum decoded export size |
+| `LIMESURVEY_IMPORT_DIR` | unset (falls back to `LIMESURVEY_EXPORT_DIR`) | Dedicated input directory for `import_data_path` reads |
+| `LIMESURVEY_MAX_IMPORT_BYTES` | `52428800` | Maximum file size accepted via `import_data_path` |
 | `LIMESURVEY_THEME_DIR` | unset | Dedicated output directory for generated theme ZIPs |
 | `LIMESURVEY_MAX_THEME_ASSET_BYTES` | `5242880` | Maximum logo and theme entry size |
 | `LIMESURVEY_ENABLE_EXPERIMENTAL_METHODS` | `false` | Enable non-standard `list_response_exports` |
@@ -236,6 +238,33 @@ The original RemoteControl export methods remain available for compatibility.
 Oversized inline responses are replaced by a marked preview that is not a valid
 export file.
 
+## Secure File Imports
+
+`limesurvey_import_survey`, `limesurvey_import_group`, and
+`limesurvey_import_question` accept an `import_data_path` argument as an
+alternative to inline `import_data`. Set exactly one of the two; the server
+reads the file at `import_data_path` from `LIMESURVEY_IMPORT_DIR` (falling
+back to `LIMESURVEY_EXPORT_DIR` when unset) and base64-encodes it itself, so a
+survey file of any size can be imported with a single tool call instead of an
+inline base64 payload. Use `import_data_path` for files at or above roughly
+50 KB; reserve inline `import_data` for small files under 200,000 characters
+of base64 text.
+
+The path is resolved and checked the same way as export file names: it must
+stay inside the configured import directory. Oversized files, missing files,
+paths outside the directory, and conflicting/missing parameters all fail with
+a distinct error `code` (`IMPORT_FILE_TOO_LARGE`, `IMPORT_FILE_NOT_FOUND`,
+`IMPORT_PATH_OUTSIDE_DIR`, `IMPORT_PARAM_CONFLICT`,
+`IMPORT_PAYLOAD_TOO_LARGE`, `IMPORT_DIR_NOT_CONFIGURED`) plus a `recovery`
+hint. Changing `LIMESURVEY_IMPORT_DIR` or `LIMESURVEY_MAX_IMPORT_BYTES`
+requires a full restart of the MCP client process; reconnecting alone does not
+reload environment variables.
+
+`import_survey` returns the survey ID LimeSurvey actually used: it keeps the
+ID embedded in the file when that ID is free, `destination_survey_id`
+overrides it when set, and on an ID collision LimeSurvey silently assigns a
+random 6-digit `sid` instead of failing.
+
 ## Experimental Extension
 
 `list_response_exports` is not part of the official RemoteControl method list.
@@ -251,13 +280,14 @@ npm run inspect
 npm pack --dry-run
 ```
 
-The 17 automated tests use mocked LimeSurvey JSON-RPC responses and cover:
+The 25 automated tests use mocked LimeSurvey JSON-RPC responses and cover:
 
 - JSON-RPC 1.0 ordering, session reuse, renewal, and secret handling
 - MCP handshake, schemas, annotations, confirmations, and read-only enforcement
 - Streamable HTTP bearer authentication and session isolation
 - workflow filtering and secure export files
 - survey theme ZIP generation, validation, publication guidance, and assignment
+- secure file imports via `import_data_path` for survey, group, and question tools
 
 No live LimeSurvey credentials are required. Content evaluations must be created
 against a stable test instance; see [evaluations/README.md](evaluations/README.md).
