@@ -52,12 +52,16 @@ test("generates and validates a responsive LimeSurvey 7 theme package", async ()
     assert.ok(zip.file("config.xml"));
     assert.ok(zip.file("css/mcp-theme.css"));
     assert.ok(zip.file("LICENSE.txt"));
+    // LimeSurvey 7 needs the theme's own views/ path to exist or it raises a Twig LoaderError.
+    assert.ok(zip.file("views/README.txt"), "generated inherit theme must ship a views/ directory");
     assert.equal(Object.keys(zip.files).some((name) => name.endsWith(".js")), false);
     const manifest = await zip.file("config.xml")?.async("string");
     const css = await zip.file("css/mcp-theme.css")?.async("string");
     const license = await zip.file("LICENSE.txt")?.async("string");
     assert.match(manifest ?? "", /<extends>vanilla<\/extends>/);
     assert.match(manifest ?? "", /<version>7\.0<\/version>/);
+    // apiVersion must be the integer template API version LimeSurvey expects, not "3.0".
+    assert.match(manifest ?? "", /<apiVersion>3<\/apiVersion>/);
     assert.match(css ?? "", /@media \(max-width: 575\.98px\)/);
     assert.match(css ?? "", /prefers-reduced-motion/);
     assert.match(license ?? "", /SPDX-License-Identifier: GPL-2\.0-or-later/);
@@ -122,6 +126,59 @@ test("rejects a theme package that extends fruity_twentythree instead of vanilla
     const validationContent = validated.structuredContent as { result: { valid: boolean; errors: string[] } };
     assert.equal(validationContent.result.valid, false);
     assert.ok(validationContent.result.errors.some((error) => error === "Manifest must extend vanilla."));
+  } finally {
+    await mcpClient.close();
+    await server.close();
+    await rm(themeDir, { recursive: true, force: true });
+  }
+});
+
+test("rejects an inherit theme package that is missing the views/ directory", async () => {
+  const themeDir = await mkdtemp(path.join(os.tmpdir(), "limesurvey-mcp-theme-views-"));
+  const { server, mcpClient } = await connected({ ...baseConfig, themeDir });
+  try {
+    const noViewsManifest = `<?xml version="1.0" encoding="UTF-8"?>
+<config>
+  <metadata>
+    <name>no_views_theme</name>
+    <title>No Views Theme</title>
+    <type>theme</type>
+    <author>Test Author</author>
+    <license>GNU General Public License version 2 or later</license>
+    <version>1.0.0</version>
+    <apiVersion>3</apiVersion>
+    <description>Inherit theme without a views directory (the F-006 render bug).</description>
+  <extends>vanilla</extends>
+  </metadata>
+  <compatibility>
+    <version>7.0</version>
+  </compatibility>
+  <files>
+    <css>
+      <add>css/mcp-theme.css</add>
+    </css>
+  </files>
+</config>
+`;
+    const zip = new JSZip();
+    zip.file("config.xml", noViewsManifest);
+    zip.file(
+      "css/mcp-theme.css",
+      "@media (max-width: 575.98px) { body { color: red; } }\n:focus-visible { outline: none; }\n/* prefers-reduced-motion */\n",
+    );
+    zip.file("LICENSE.txt", "GNU General Public License version 2 or later\n");
+    const archive = await zip.generateAsync({ type: "nodebuffer" });
+    const fileName = "no_views_theme-1.0.0-ls7.zip";
+    await writeFile(path.join(themeDir, fileName), archive, { mode: 0o600 });
+
+    const validated = await mcpClient.callTool({
+      name: "limesurvey_validate_survey_theme",
+      arguments: { file_name: fileName },
+    });
+    assert.equal(validated.isError, undefined);
+    const validationContent = validated.structuredContent as { result: { valid: boolean; errors: string[] } };
+    assert.equal(validationContent.result.valid, false);
+    assert.ok(validationContent.result.errors.some((error) => error.includes("views/ directory")));
   } finally {
     await mcpClient.close();
     await server.close();

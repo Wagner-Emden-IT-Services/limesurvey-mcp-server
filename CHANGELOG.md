@@ -5,7 +5,26 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.3.0] - 2026-07-24
+## [1.3.1] - 2026-07-25
+
+### Fixed
+
+- `generate_survey_theme` now ships a `views/` directory (placeholder
+  `views/README.txt`) in the generated package. Without it, LimeSurvey 7 adds
+  the theme's own Twig view path to its `FilesystemLoader` and raises a
+  `Twig\Error\LoaderError` ("... /views/ directory does not exist") when a
+  survey using the theme is rendered, even though the layouts should inherit
+  from the vanilla parent. Found during a 360°-feedback end-to-end test on
+  LimeSurvey CE 7.0.6 (2026-07-24). The generated theme render fix still needs
+  confirmation against a live LimeSurvey 7 instance.
+- The manifest now emits `<apiVersion>3</apiVersion>` (integer template API
+  version) instead of `<apiVersion>3.0</apiVersion>`, matching working
+  hand-authored themes.
+- `validate_survey_theme` now accepts `views/` entries and reports an error
+  when an inheriting theme (`<extends>` set) is missing its `views/`
+  directory, so the render-blocking defect above is caught before upload.
+
+
 
 ### Added
 
