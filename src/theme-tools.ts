@@ -158,6 +158,17 @@ https://www.gnu.org/licenses/old-licenses/gpl-2.0.html
 SPDX-License-Identifier: GPL-2.0-or-later
 `;
 
+// LimeSurvey 7 adds every survey theme's own views/ path to the Twig FilesystemLoader and raises a
+// Twig LoaderError ("... /views/ directory does not exist") when it is absent -- even for an inheriting
+// theme that overrides no templates. Shipping this placeholder guarantees the directory exists after
+// extraction; the actual layout templates are still resolved from the inherited vanilla parent.
+const generatedThemeViewsNotice = `This directory makes LimeSurvey register the theme's own Twig view path.
+An inheriting survey theme must ship a views/ directory even when it overrides no
+templates: LimeSurvey 7 adds this path to the Twig FilesystemLoader and raises a
+Twig LoaderError when it is absent, while the actual layout templates are still
+resolved from the inherited vanilla parent theme.
+`;
+
 function manifest(input: {
   themeName: string;
   title: string;
@@ -182,7 +193,7 @@ function manifest(input: {
     <copyright>Copyright (C) ${new Date().getUTCFullYear()} ${xmlEscape(input.author)}</copyright>
     <license>GNU General Public License version 2 or later</license>
     <version>${xmlEscape(input.themeVersion)}</version>
-    <apiVersion>3.0</apiVersion>
+    <apiVersion>3</apiVersion>
     <description>${xmlEscape(input.description)}</description>
     <lastUpdate>${date}</lastUpdate>
     <extends>vanilla</extends>
@@ -352,7 +363,7 @@ async function validateZip(config: LimeSurveyConfig, fileName: string): Promise<
     if (original.startsWith("/") || original.includes("\\") || original.split("/").includes("..")) {
       errors.push(`Unsafe archive path: ${original}`);
     }
-    if (!entry.dir && !/^(config\.xml|LICENSE\.txt|css\/[a-zA-Z0-9_.-]+\.css|files\/[a-zA-Z0-9_.-]+\.(png|jpe?g))$/.test(entry.name)) {
+    if (!entry.dir && !/^(config\.xml|LICENSE\.txt|css\/[a-zA-Z0-9_.-]+\.css|views\/[a-zA-Z0-9_./-]+\.(twig|txt|md|html)|files\/[a-zA-Z0-9_.-]+\.(png|jpe?g))$/.test(entry.name)) {
       errors.push(`Unsupported theme file: ${entry.name}`);
     }
     const internal = entry as unknown as { _data?: { uncompressedSize?: number } };
@@ -391,6 +402,13 @@ async function validateZip(config: LimeSurveyConfig, fileName: string): Promise<
       if (!versions.some((version) => version === "7" || version.startsWith("7."))
         && !versions.some((version) => version === "6" || version.startsWith("6."))) {
         errors.push("Manifest compatibility must target LimeSurvey 7.x or 6.x.");
+      }
+      const hasViews = entries.some((item) => item.name === "views/" || item.name.startsWith("views/"));
+      if (parent && !hasViews) {
+        errors.push(
+          "Inherit themes must include a views/ directory; LimeSurvey 7 raises a Twig LoaderError "
+            + "(\"... /views/ directory does not exist\") when it is missing.",
+        );
       }
       metadata = { name, parent, type, license, compatibility: versions };
     } catch (value) {
@@ -588,6 +606,9 @@ export function registerThemeTools(server: McpServer, client: LimeSurveyClient, 
         density: input.density,
       }));
       zip.file("LICENSE.txt", generatedThemeLicenseNotice);
+      // Ship a views/ directory so LimeSurvey 7 can register the theme's Twig view path (renders instead
+      // of raising a Twig LoaderError). Layouts inherit from the vanilla parent; see the notice text.
+      zip.file("views/README.txt", generatedThemeViewsNotice);
       if (input.logo_base64 && input.logo_file_type) {
         const logo = decodeLogo(
           input.logo_base64,
