@@ -149,7 +149,7 @@ test("list_installed_themes lists generated packages, dedupes themes in use, and
     await mkdir(path.join(themeDir, "unpacked_theme"));
 
     const surveys = [{ sid: "1" }, { sid: "2" }, { sid: "3" }];
-    const templates: Record<string, string> = { "1": "kp_corporate_2026", "2": "kp_corporate_2026", "3": "inherit" };
+    const templates: Record<string, string> = { "1": "acme_corporate_2026", "2": "acme_corporate_2026", "3": "inherit" };
     const mockFetch: typeof fetch = async (_input, init) => {
       const request = JSON.parse(String(init?.body)) as JsonRpcRequest;
       let result: JsonValue;
@@ -173,7 +173,7 @@ test("list_installed_themes lists generated packages, dedupes themes in use, and
       assert.equal(generatedPackages.length, 2);
       assert.ok(generatedPackages.some((item) => item.name === "acme_feedback-1.0.0-ls7.zip"));
       assert.ok(generatedPackages.some((item) => item.name === "unpacked_theme"));
-      assert.deepEqual(result.themes_in_use, ["kp_corporate_2026"]);
+      assert.deepEqual(result.themes_in_use, ["acme_corporate_2026"]);
       assert.equal(result.inherit_count, 0);
       assert.equal(result.scanned_surveys, 2);
       assert.equal(result.total_surveys, 3);
