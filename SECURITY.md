@@ -11,13 +11,18 @@
 
 Do not disclose security vulnerabilities in a public GitHub issue.
 
-Email **security@wagner-emden.de** with:
+Use GitHub's private vulnerability reporting instead: go to the repository's
+**[Security tab -> Report a vulnerability](https://github.com/Wagner-Emden-IT-Services/limesurvey-mcp-server/security/advisories/new)**
+and include:
 
 - a description of the vulnerability;
 - reproducible steps or a proof of concept;
 - the expected impact;
 - affected versions and deployment mode;
 - a suggested remediation, if available.
+
+If you cannot use GitHub, use the contact form at
+<https://www.wagner-emden.com> with the subject `[SECURITY] limesurvey-mcp-server`.
 
 We aim to acknowledge reports within 48 hours. After a fix is available, we may
 publish a GitHub Security Advisory and credit the reporter unless anonymity was

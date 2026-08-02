@@ -379,7 +379,8 @@ docs/                   detailed operational documentation
 ## Security
 
 Read [SECURITY.md](SECURITY.md) before remote deployment. Report vulnerabilities
-privately to **security@wagner-emden.de**, not through public issues.
+privately via [GitHub private vulnerability reporting](https://github.com/Wagner-Emden-IT-Services/limesurvey-mcp-server/security/advisories/new),
+not through public issues.
 
 ## Contributing
 
